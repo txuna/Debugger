@@ -40,6 +40,7 @@ struct Copy_Symbol_Meta copy_symbol_meta;
 //int sym_size; //symbol의 개수 
 int byte_ptr = 0;
 int dword_ptr = 0;
+int word_ptr = 0; 
 int segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
 int operand_size=0; 		//0x67
 int operand_address=0; 		//0x66
@@ -48,6 +49,8 @@ int rep=0;  				//0xf3
 int repn =0;				//0xf2
 int some_address = 0;		//각 명령어의 address를 표시. 
 int check_prefix_line = 0;  
+int two_byte_opcode = 0;
+int three_byte_opcode = 0; 
 //그냥 따로 함수를 만들어서 바로 출력하게 하자. 그리고 prefix값을 확인해서 check_prefix_line값이 2이상이면 pass
 /*================================*/
 
@@ -64,6 +67,9 @@ void prefix(char* rm_field); //이 함수안에서 segment_sprintf를 호출하�
 void rep_prefix_cat(char* rm_field);
 int check_elf(int file); 
 /*==================================================================================*/
+char* r16r32_rm8(unsigned char* file, int* index);
+char* r16r32_rm16(unsigned char* file, int* index);
+char* moffset16_32(unsigned char* file, int* index); 
 char* rel8(unsigned char* file, int* index); 
 char* rm8(unsigned char* file, int* index);
 char* m8(unsigned char* file, int* index);
@@ -141,12 +147,12 @@ int main(int argc, char** argv)
 	//sym_size = symbol_number; 
 	
 	//아래코드는 symbol_meta구조체의 내용을 복사한다. 
-	copy_symbol_meta.sym_name = (char**)malloc(sizeof(char*)*symbol_number);
+	copy_symbol_meta.sym_name = (char**)malloc(sizeof(char*)*symbol_number); //해제 필요 
     for(i=0;i<symbol_number;i++)
 	{
-		copy_symbol_meta.sym_name[i] = (char*)malloc(sizeof(char)*100); 
+		copy_symbol_meta.sym_name[i] = (char*)malloc(sizeof(char)*100);  //해제 필요 
 	}
-	copy_symbol_meta.offset	= (int*)malloc(sizeof(int)*symbol_number); 
+	copy_symbol_meta.offset	= (int*)malloc(sizeof(int)*symbol_number);  //해제 필요 
 
 	for(i=0;i<symbol_number;i++)
 	{
@@ -161,6 +167,13 @@ int main(int argc, char** argv)
 		scanf("%s", input_symbol); 
 		disasm(file, file_vol, symbol_meta, input_symbol, symbol_number); //number :: symbol 개수 
 	}
+	free(symbol_meta); 
+	free(copy_symbol_meta.offset); 
+	for(i=0;i<symbol_number;i++)
+	{
+		free(copy_symbol_meta.sym_name[i]); 
+	}
+	free(copy_symbol_meta.sym_name);
 	return 0;
 }
 
@@ -215,10 +228,6 @@ int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* fil
 		printf("%s", ins); 
 	}
 
-	//rep_prefix_cat(ins); 
-
-	//printf("%s",ins); 
-
 	/*==============전역변수 초기화 구간==========================*/
 	segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
 	operand_size=0; 		//0x67
@@ -229,6 +238,9 @@ int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* fil
 	check_prefix_line =0;
 	byte_ptr = 0;
 	dword_ptr = 0;
+	word_ptr = 0; 
+	two_byte_opcode = 0;    //0x0f
+	three_byte_opcode = 0;
 	/*===========================================================*/
 	free(show_ins);
     return 0;
@@ -269,6 +281,9 @@ int parse_no(char* mnemonic, unsigned char* file, int* index, int check)
 	check_prefix_line =0;
 	byte_ptr = 0;
 	dword_ptr = 0;
+	word_ptr =0;
+	two_byte_opcode = 0;
+	three_byte_opcode = 0;
 	/*===========================================================*/
 }
 /*prefix가 2개 이상인 경우가 있으니 prefix를 읽을 때 마다 check++해서 1일 때만 출력하게 한다. */
@@ -395,10 +410,35 @@ char* modrm_byte(unsigned char* file, int* index, int modrm, int *mod, int *rm, 
 	switch(order)
 	{
 		case 0: //rm_r
+			if(byte_ptr && (*mod != 0x3)){ //only memory!!
+				memmove(rm_field+9, rm_field, strlen(rm_field));
+				memmove(rm_field, "byte ptr ", strlen("byte ptr "));
+			}
+			else if(dword_ptr && (*mod != 0x3)){
+				memmove(rm_field+10, rm_field, strlen(rm_field));
+				memmove(rm_field, "dword ptr ", strlen("dword ptr "));
+			}
+			else if(word_ptr && (*mod != 0x3)){
+				memmove(rm_field+9, rm_field, strlen(rm_field));
+				memmove(rm_field, "word ptr ", strlen("word ptr "));
+			}
+
 			sprintf(final, "%s, %s", rm_field, reg_field);
 		   	break;
 
 		case 1: //r_rm
+			if(byte_ptr && (*mod != 0x3)){ //only memory!!
+				memmove(rm_field+9, rm_field, strlen(rm_field));
+				memmove(rm_field, "byte ptr ", strlen("byte ptr "));
+			}
+			else if(dword_ptr && (*mod != 0x3)){
+				memmove(rm_field+10, rm_field, strlen(rm_field));
+				memmove(rm_field, "dword ptr ", strlen("dword ptr "));
+			}
+			else if(word_ptr && (*mod != 0x3)){
+				memmove(rm_field+9, rm_field, strlen(rm_field));
+				memmove(rm_field, "word ptr ", strlen("word ptr "));
+			}
 			sprintf(final, "%s, %s", reg_field, rm_field); 
 			break; 
 		
@@ -412,6 +452,10 @@ char* modrm_byte(unsigned char* file, int* index, int modrm, int *mod, int *rm, 
 				memmove(final+10, final, strlen(final));
 				memmove(final, "dword ptr ", strlen("dword ptr "));
 			}
+			else if(word_ptr && (*mod != 0x3)){
+				memmove(final+9, final, strlen(final));
+				memmove(final, "word ptr ", strlen("word ptr "));
+			}
 			break;
 
 		case 3: //rm_segment의 경우 
@@ -420,6 +464,9 @@ char* modrm_byte(unsigned char* file, int* index, int modrm, int *mod, int *rm, 
 
 		case 4: //segment_rm일 경우  
 			sprintf(final, "%s, %s",mov_segment[*reg], rm_field); 
+			break; 
+		case 5: //reg만일뿐 
+			sprintf(final, "%s", reg_field); 
 			break; 
 	}
 	//여기서 prefix를 붙일것인가? 
@@ -855,7 +902,7 @@ char* rm16r32_imme8(unsigned char* file, int* index)
 	int modrm = file[++(*index)];
 	int reg, mod, rm, order;
 	char* final; 
-	byte_ptr=1; 
+	dword_ptr=1; 
 	order = 2;//rm_r = 0     order = 1 //r_rm order = 2 //rm 
 
 	final = modrm_byte(file, index, modrm, &mod, &rm, &reg, sbit, order); 
@@ -921,12 +968,62 @@ char* rm16r32_r16r32(unsigned char* file, int* index)
 	int modrm = file[++(*index)];
 	int reg, mod, rm, order;
 	char* final; 
-
+	dword_ptr = 1;
 	order = 0;//rm_r     order = 1 //r_rm
 
 	final = modrm_byte(file, index, modrm, &mod, &rm, &reg, sbit, order); 
 	return final; 
 }
+//////////////////////////////////////////////////////////////////
+//메모리일땐 그냥 byte, word, dword로 구분시켜주고
+//레지스터일땐 왼쪽, 오른쪽 구분해서 modrm표 보고 넣어주면 될듯한데 
+char* r16r32_rm8(unsigned char* file, int* index)
+{
+	int modrm = file[++(*index)]; 
+	int save_index = *index; 
+	int reg, mod, rm, order; 
+	char* temp1;
+    char* temp2; 
+	char* final = (char*)malloc(sizeof(char)*50); 
+	memset(final, '\0', 50); 	
+	//order = 2(rm), order = 5(reg)
+	byte_ptr = 1;
+	temp1 = modrm_byte(file, index, modrm, &mod, &rm, &reg, 0, 2); //rm 
+	temp2 = modrm_byte(file, &save_index, modrm, &mod, &rm, &reg, 1, 5); //reg
+	//printf("test code 2 : %s\n", temp1);
+	sprintf(final, "%s, %s", temp2, temp1); 
+	//printf("test code : %s\n", temp1);
+	//free(final2);
+	free(temp1); 
+	free(temp2);
+	return final; 
+}
+
+char* r16r32_rm16(unsigned char* file, int* index)
+{
+	int modrm = file[++(*index)]; 
+	int save_index = *index; 
+	int reg, mod, rm, order; 
+	char* temp1; 
+	char* temp2; 
+	char* final = (char*)malloc(sizeof(char)*50);
+	memset(final, '\0', 50); 
+	word_ptr = 1; 
+	operand_size = 1;
+	temp1 = modrm_byte(file, index, modrm, &mod, &rm, &reg, 1, 2); //rm  
+	operand_size = 0;	
+	temp2 = modrm_byte(file, &save_index, modrm, &mod, &rm, &reg, 1, 5); //reg 
+
+	//modrm_byte를 두번돌려서 index가 많이 흐트려진다. 
+	//그리고 save_index를  선언한뒤 modrm에서 index를 저장하고 
+	//다음 modrm_byte를 넘길때 save_index를 넘겨야 한다. 	
+
+	sprintf(final, "%s, %s", temp2, temp1); 
+	free(temp1); 
+	free(temp2);
+	return final; 
+}
+/////////////////////////////////////////////////////////////////
 char* r16r32_rm16r32(unsigned char* file, int* index)
 {
 	int sbit = file[*index] & 1;
@@ -935,12 +1032,34 @@ char* r16r32_rm16r32(unsigned char* file, int* index)
 	char* final; 
 
 	order = 1;//rm_r     order = 1 //r_rm
-
+	dword_ptr = 1;
 	final = modrm_byte(file, index, modrm, &mod, &rm, &reg, sbit, order); 
 	return final; 
 }
+//mov eax, :: gs:0x14 여기서 세그먼트는 segment_override로 찾고 prefix 
+char* moffset16_32(unsigned char* file, int* index)
+{
+	char* segment_field = (char*)malloc(50); 
+	char* imme32_field = (char*)malloc(50);
+	char* final = (char*)malloc(50);
+	memset(final, '\0', 50); 
+	memset(segment_field, '\0', 50); 
+	memset(imme32_field, '\0', 50);
+	disp_func(file, index, 2, imme32_field); 
+	remove_char(imme32_field); 
+	prefix(segment_field); 
+
+	sprintf(final, "eax, %s%s",segment_field, imme32_field); 
+	free(imme32_field); 
+	free(segment_field); 
+   	return final; 	
+
+}
+
 int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, char* input_symbol, int symbol_number)
 { 
+	//int index = 0x110; 
+	
 	int save_index; 
 	//printf("test test\n");
 	int sym_index, check=0; 
@@ -960,8 +1079,10 @@ int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, c
 	}
 	int index=symbol_meta[check].offset;
 	save_index = index; 
+	
     //printf("%d %d\n",index, symbol_meta[check].size);
 	//return 0;   
+	//while(index < 0x120)
 	while(index < save_index+symbol_meta[check].size) //file_vol
 	{
 		check_prefix_line++;
@@ -982,6 +1103,40 @@ int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, c
 			case 0x0c: parse("or al %s\n", imme8, file, &index); break;
 			case 0x0d: parse("or eax %s\n", imme16_32, file, &index); break; 
 			case 0x0e: parse_no("push cs\n", file, &index,0); break; 
+			case 0x0f:
+			{
+				print_some_address(file, &index);
+				check_prefix_line++;
+				++index;
+				switch(file[index])
+				{
+					case 0x80: parse("jo %s\n", rel16_32, file, &index); break;
+					case 0x81: parse("jno %s\n", rel16_32, file, &index); break;
+					case 0x82: parse("jb %s\n", rel16_32, file, &index); break;
+					case 0x83: parse("jnb %s\n", rel16_32, file, &index); break;
+					case 0x84: parse("je %s\n", rel16_32, file, &index); break;
+					case 0x85: parse("jne %s\n", rel16_32, file, &index); break;
+					case 0x86: parse("jbe %s\n", rel16_32, file, &index); break;
+					case 0x87: parse("jnbe %s\n", rel16_32, file, &index); break;
+					case 0x88: parse("js %s\n", rel16_32, file, &index); break;
+					case 0x89: parse("jns %s\n", rel16_32, file, &index); break;
+					case 0x8a: parse("jp %s\n", rel16_32, file, &index); break;
+					case 0x8b: parse("jnp %s\n", rel16_32, file, &index); break;
+					case 0x8c: parse("jl %s\n", rel16_32, file, &index); break;
+					case 0x8d: parse("jnl %s\n", rel16_32, file, &index); break;
+					case 0x8e: parse("jle %s\n", rel16_32, file, &index); break;
+					case 0x8f: parse("jnle %s\n", rel16_32, file, &index); break;
+					case 0xa0: parse_no("push fs\n",file, &index, 0); break; 
+					case 0xa1: parse_no("pop fs\n", file, &index, 0); break; 
+					case 0xa8: parse_no("push gs\n",file, &index, 0); break; 
+					case 0xa9: parse_no("pop gs\n", file, &index, 0); break;  
+					case 0xaf: parse("imul %s\n",r16r32_rm16r32, file, &index); break; 
+					case 0xb6: parse("movzx %s\n", r16r32_rm8, file, &index); break; 
+					case 0xb7: parse("movzx %s\n", r16r32_rm16, file, &index); break; 
+					case 0xbe: parse("movsx %s\n", r16r32_rm8, file, &index); break;  
+					case 0xbf: parse("movsx %s\n", r16r32_rm16, file, &index); break; 
+				}
+			} break; 
 			case 0x10: parse("adc %s\n", rm8_r8, file, &index); break; 
 			case 0x11: parse("adc %s\n", rm16r32_r16r32, file, &index); break;
 			case 0x12: parse("adc %s\n", r8_rm8, file, &index); break;
@@ -1187,6 +1342,7 @@ int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, c
 			case 0x97: parse("xchg %s\n",r16r32_xchg, file, &index); break;
 			case 0x98: parse_no("cwde\n", file, &index,1); break;
 			case 0x99: parse_no("cdq\n", file, &index,1); break; 
+			case 0xa1: parse("mov %s\n", moffset16_32, file, &index); break; 
 			case 0xa4: parse("movsb %s\n", m8, file, &index); break;
 			case 0xa5: parse("movsd %s\n", m32, file, &index); break; 
 			case 0xa6: parse("cmpsb %s\n", m8, file, &index); break; 
@@ -1500,16 +1656,10 @@ struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file)
 	int size = (strtab_offset - symtab_offset) / 0x10;  //symbol의 개수 
 	struct Symbol_Meta* symbol_meta = (struct Symbol_Meta*)malloc(sizeof(struct Symbol_Meta) * size); 
 	Elf32_Sym* symbol = (Elf32_Sym*)malloc(sizeof(Elf32_Sym)*size); 
-	//symbol_meta->sym_name = (char**)malloc(sizeof(char*)*size); //심볼의 이름 
 	
 	//printf("test code 1\n");
 
 	int i, j=0; 
-	//for(i=0;i<size;i++)
-	//	symbol_meta->sym_name[i] = (char*)malloc(sizeof(char)*100);
-	//symbol_meta->offset = (int*)malloc(sizeof(int)*size); //각 각의 심볼 offset 
-	
-	//printf("test code 2\n");
 
 	lseek(file, symtab_offset, SEEK_SET); 
 	for(i=0;i<size;i++)
@@ -1520,12 +1670,6 @@ struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file)
 		symbol_meta[i].size = symbol[i].st_size;  //symbol_size 
 		//printf("test code : %x\n",symbol_meta[i].offset);
 	}
-	//printf("test code 3\n");
-	/*for(i=0;i<size;i++)
-	{
-		memset(symbol_meta->sym_name[i], '\0', 100); 
-	}*/
-	//printf("test code 4\n");
 	for(i=0;i<size;i++)
 	{
 		lseek(file, strtab_offset+symbol[i].st_name, SEEK_SET); 
@@ -1541,7 +1685,7 @@ struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file)
 		symbol_meta[i].sym_name[j] = '\0'; 
 		j=0;
 	}
-	//printf("test code errno : %d\n",errno);
+	free(symbol); 
 	return symbol_meta; 
 }
 
