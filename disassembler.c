@@ -55,6 +55,9 @@ int three_byte_opcode = 0;
 /*================================*/
 
 /*============Fuction================================================================*/
+//void command_line(); 
+void setup(char* binary, char* file_name, int argu_number); 
+char* command_line(char* file_name, unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, int symbol_number);
 void print_some_address(unsigned char* file, int* index);
 void sib_func(unsigned char* file, int* index, int disp, char* sib_field);
 void disp_func(unsigned char* file, int* index, int disp, char* disp_field);
@@ -106,22 +109,28 @@ int parse_no(char* mnemonic, unsigned char* file, int* index, int check);
 /*================================*/
 int main(int argc, char** argv)
 {
+	setup(argv[0], argv[1], argc); 
+	return 0;
+}
+
+void setup(char* binary, char* file_name, int argu_number)
+{
 	char input_symbol[100]; 
-	int fd = open(argv[1], O_RDONLY);  //일단 임시로 여기서 열자
+	int fd = open(file_name, O_RDONLY);  //일단 임시로 여기서 열자
 	Elf32_Ehdr elf; 
 	Elf32_Shdr* section_header; 
 	struct Symbol_Meta* symbol_meta; 
 	int check_symtab_offset=0, strtab_offset, symtab_offset, i;
    	int symbol_number; 	
-	if(argc != 2)
+	if(argu_number != 2)
 	{
-		perror("Error"); 
+		printf("Usage: ./%s <file_name>\n ",binary); 
 		exit(1);
 	}
 
 	int file_vol; 
 	unsigned char* file; 
-	file = file_to_heap(argv[1], &file_vol); 
+	file = file_to_heap(file_name, &file_vol); 
 	
 	elf = elf_header(fd); 
 	section_header = elf_section_header(elf, fd); 
@@ -130,22 +139,9 @@ int main(int argc, char** argv)
 	strtab_offset = ((section_header+elf.e_shstrndx-1)->sh_offset); 
 	symtab_offset = (section_header+check_symtab_offset)->sh_offset;
 	symbol_number = (strtab_offset - symtab_offset) / 0x10; //struct의 크기만큼 나누어 개수를 확인 
-	//printf("test 24\n");
 	symbol_meta = symbol_table(strtab_offset, symtab_offset, fd); 
-	//printf("test 23\n");
-	printf("===============================================\n");
-	printf("[%s] symbol name\n",argv[1]);
-	for(i=0;i<symbol_number;i++)
-	{
-		printf("%s\n",symbol_meta[i].sym_name);
-	} 
-	printf("===============================================\n");
-	close(fd); 
-	/*
-	 디스어셈할 때 원하는 심볼 이름을 받아서 출력하자. 위에선 먼저 있는 심볼을 다 출력하게 하고. 
-	 */
-	//sym_size = symbol_number; 
 	
+	close(fd); 
 	//아래코드는 symbol_meta구조체의 내용을 복사한다. 
 	copy_symbol_meta.sym_name = (char**)malloc(sizeof(char*)*symbol_number); //해제 필요 
     for(i=0;i<symbol_number;i++)
@@ -160,13 +156,8 @@ int main(int argc, char** argv)
 		copy_symbol_meta.offset[i] = symbol_meta[i].offset; 
 	}
 	copy_symbol_meta.size = symbol_number; 
-
-	while(1)
-	{
-		printf("\ninput want to disassemble symbol name : ");
-		scanf("%s", input_symbol); 
-		disasm(file, file_vol, symbol_meta, input_symbol, symbol_number); //number :: symbol 개수 
-	}
+	
+	command_line(file_name, file, file_vol, symbol_meta,symbol_number); 
 	free(symbol_meta); 
 	free(copy_symbol_meta.offset); 
 	for(i=0;i<symbol_number;i++)
@@ -174,10 +165,57 @@ int main(int argc, char** argv)
 		free(copy_symbol_meta.sym_name[i]); 
 	}
 	free(copy_symbol_meta.sym_name);
-	return 0;
+	//return 0;
+
 }
 
-//struct Copy_Symbol_Meta copy_meta[sym_size]; 
+char* command_line(char* file_name, unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, int symbol_number)
+{
+	int i; 
+	char data[100] = {0, }; 
+	char* tok; 
+	printf("disassembler v1.0.0\n");
+	printf("if you want to help, input : $sd help\n");
+	while(1)
+	{
+		printf("%c[1;31m",27);
+		printf("$sd ");
+		printf("%c[0m",27);
+		fgets(data, sizeof(data), stdin); 
+		data[strlen(data)-1] = '\0';
+		//read(0, data, sizeof(data)); 
+		//printf("%s\n",data);
+		if(!strcmp(data, "print symbol"))
+		{
+			printf("===============================================\n");
+			printf("[%s] symbol name\n",file);
+			for(i=0;i<symbol_number;i++)
+			{
+				printf("[%d] : %s\n",i,symbol_meta[i].sym_name);
+			} 
+			printf("===============================================\n");
+
+		}
+		else if(!strncmp(data, "disasm", 6))
+		{
+			tok = strtok(data, " ");
+			tok = strtok(NULL, " "); 
+			disasm(file, file_vol, symbol_meta, tok, symbol_number); //number :: symbol 개수 
+		}
+		else if(!strcmp(data, "quit"))
+		{
+			exit(1);
+		}
+		else if(!strcmp(data, "help"))
+		{
+			printf("\n\n");
+			printf("$sd print symbol :: print <%s>'s <symbol_name>\n", file_name); 
+			printf("$sd disasm <symbol_name> :: disassembly <symbol_name>\n");
+			printf("$sd quit :: quit debugger\n");
+			printf("will adding...\n\n");
+		}
+	}
+}
 
 void check_symtab(int* check_symtab_offset, int e_shnum, Elf32_Shdr* section)
 {
@@ -406,7 +444,6 @@ char* modrm_byte(unsigned char* file, int* index, int modrm, int *mod, int *rm, 
 		strcpy(reg_field, regs8[*reg]);
 	}
 	prefix(rm_field);
-	//printf("test8:%s\n",rm_field);
 	switch(order)
 	{
 		case 0: //rm_r
@@ -538,11 +575,7 @@ void sib_func(unsigned char* file, int* index, int disp, char* sib_field) //sib_
 		case 0x2: n = 4; break; 
 		case 0x3: n = 8; break;
 	}
-	//disp_func(file, index, disp)
-	//printf("%s %s %d\n",sib_base[base], scale_index[s_index], n);
-	//printf("%s", sib_field); 
 	sprintf(sib_field, "[%s+%s*%d", sib_base[base], scale_index[s_index], n);
-	//printf("test9 : %s\n", sib_field);
 	disp_func(file, index, disp, sib_field);
 }
 
@@ -616,8 +649,6 @@ void disp_func(unsigned char* file, int* index, int disp, char* disp_field)
 		sprintf(temp, "%d", complement_disp16);
 		strcat(disp_field, temp); 
 	}
-	//printf("test10 : %s debugging : %d\n",disp_field, debugging);
-	//debugging++;
 }
 //점프 관련해서 symbol명 적기 
 //그리고 주소 출력할때 옆에 그 주소와 symbol 주소와 일치하면 <symbol name> 넣어주기
@@ -683,7 +714,6 @@ char* rel8(unsigned char* file, int* index)
 
 char* r16r32_rm16r32_imme16_32(unsigned char* file, int* index)
 {
-	//printf("test15: center\n");
 	int modrm = file[++(*index)];
 	int reg, mod, rm, order;
 	char* final; 
@@ -692,13 +722,11 @@ char* r16r32_rm16r32_imme16_32(unsigned char* file, int* index)
 	strcat(final, ", "); 
 	disp_func(file, index, 2, final); 
 	remove_char(final); 
-	//printf("test14: %s\n", final); 
 	return final; 
 }
 
 char* r16r32_rm16r32_imme8(unsigned char* file, int* index)
 {
-	//printf("test15: center\n");
 	int modrm = file[++(*index)];
 	int reg, mod, rm, order;
 	char* final; 
@@ -707,7 +735,6 @@ char* r16r32_rm16r32_imme8(unsigned char* file, int* index)
 	strcat(final, ", "); 
 	disp_func(file, index, 1, final); 
 	remove_char(final); 
-	//printf("test14: %s\n", final); 
 	return final; 
 }
 
@@ -745,7 +772,6 @@ char* imme8(unsigned char* file, int* index)
 	memset(imme8_field, '\0', 50);
 	disp_func(file, index, 1, imme8_field); 
 	remove_char(imme8_field); 
-	//printf("test12 : %s\n", imme8_field); 
    	return imme8_field; 	
 }	
 
@@ -886,9 +912,6 @@ char* rm16r32_imme16_32(unsigned char* file, int* index)
 	order = 2;//rm_r = 0     order = 1 //r_rm order = 2 //rm 
 
 	final = modrm_byte(file, index, modrm, &mod, &rm, &reg, sbit, order); 
-	//printf("test 17 : %s\n", final); 
-	//memmove(final+10, final, strlen(final));
-	//memmove(final, "dword ptr ", strlen("dword ptr "));
 
 	strcat(final, ", "); 
 	disp_func(file, index, 2, final);
@@ -906,13 +929,9 @@ char* rm16r32_imme8(unsigned char* file, int* index)
 	order = 2;//rm_r = 0     order = 1 //r_rm order = 2 //rm 
 
 	final = modrm_byte(file, index, modrm, &mod, &rm, &reg, sbit, order); 
-	//printf("test 17 : %s\n", final); 
-	//memmove(final+10, final, strlen(final));
-	//memmove(final, "dword ptr ", strlen("dword ptr "));
 
 	strcat(final, ", "); 
 	disp_func(file, index, 1, final);
-	//printf("test code : %s\n", final);
 	remove_char(final);
 	return final; 
 }
@@ -927,9 +946,6 @@ char* rm8_imme8(unsigned char* file, int* index)
 	order = 2;//rm_r = 0     order = 1 //r_rm order = 2 //rm 
 	//byte ptr
 	final = modrm_byte(file, index, modrm, &mod, &rm, &reg, sbit, order); 
-	//memmove(final+9, final, strlen(final)); //메모리일때만...
-	//memmove(final, "byte ptr ", strlen("byte ptr "));
-	//printf("test 17 : %s\n", final); 
 	strcat(final, ", "); 
 	disp_func(file, index, 1, final);
 	remove_char(final);
@@ -1058,17 +1074,14 @@ char* moffset16_32(unsigned char* file, int* index)
 
 int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, char* input_symbol, int symbol_number)
 { 
-	//int index = 0x110; 
 	
 	int save_index; 
-	//printf("test test\n");
 	int sym_index, check=0; 
 	for(sym_index=0;sym_index<symbol_number;sym_index++)
 	{
 		if(!strcmp(input_symbol, symbol_meta[sym_index].sym_name))
 		{
 			check = sym_index;
-			//printf("%d\n", check);
 			break;
 		}
 	}
@@ -1080,9 +1093,6 @@ int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, c
 	int index=symbol_meta[check].offset;
 	save_index = index; 
 	
-    //printf("%d %d\n",index, symbol_meta[check].size);
-	//return 0;   
-	//while(index < 0x120)
 	while(index < save_index+symbol_meta[check].size) //file_vol
 	{
 		check_prefix_line++;
@@ -1634,11 +1644,7 @@ Elf32_Ehdr elf_header(int file)
 
 Elf32_Shdr* elf_section_header(Elf32_Ehdr elf, int file)
 {
-	//char** sym = (char**)malloc(sizeof(char*)*elf.e_shnum);  
 	int i, j; 
-	//for(i=0;i<elf.e_shnum;i++)
-	//	sym[i] = (char*)malloc(sizeof(char)*100); 
-
 	Elf32_Shdr* section_header = (Elf32_Shdr*)malloc(sizeof(Elf32_Shdr) * elf.e_shnum); 
 	lseek(file, elf.e_shoff,SEEK_SET);
 
@@ -1657,8 +1663,6 @@ struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file)
 	struct Symbol_Meta* symbol_meta = (struct Symbol_Meta*)malloc(sizeof(struct Symbol_Meta) * size); 
 	Elf32_Sym* symbol = (Elf32_Sym*)malloc(sizeof(Elf32_Sym)*size); 
 	
-	//printf("test code 1\n");
-
 	int i, j=0; 
 
 	lseek(file, symtab_offset, SEEK_SET); 
@@ -1668,17 +1672,14 @@ struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file)
 	for(i=0;i<size;i++)	{
 		symbol_meta[i].offset = symbol[i].st_value;  //symbol offset 
 		symbol_meta[i].size = symbol[i].st_size;  //symbol_size 
-		//printf("test code : %x\n",symbol_meta[i].offset);
 	}
 	for(i=0;i<size;i++)
 	{
 		lseek(file, strtab_offset+symbol[i].st_name, SEEK_SET); 
 		while(read(file, &name, 1))
 		{
-			//printf("test code 4_1 : %d\n", errno);
 			if(name == '\0')
 				break; 
-			//printf("test code 4_1 : %d\n", name); 
 			symbol_meta[i].sym_name[j] = name; 
 			j++;
 		}

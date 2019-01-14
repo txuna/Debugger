@@ -14,3 +14,5 @@ Email : b7712983@naver.com
 [Patch Note]
 
 2019/1/13 :: I add some two byte opcode(jmp, movsx, movzx...) and memory size(dowrd ptr, word ptr, byte ptr) 
+
+2019/1/14 :: I add command line to clean interface ! 
