@@ -33,12 +33,19 @@ struct Copy_Symbol_Meta{
 	char** sym_name; 
 	int* offset;
     int size; 	
-}; 
+};
 
+struct Instruction{
+	char** ins; 
+	int* address; 
+};
+
+struct Instruction instruction; 
 struct Copy_Symbol_Meta copy_symbol_meta; 
 
 //int sym_size; //symbol의 개수 
-int line_start = 0;
+//int line_start = 0;
+int print_check=0; 
 int byte_ptr = 0;
 int dword_ptr = 0;
 int word_ptr = 0; 
@@ -49,9 +56,7 @@ int lock=0;				    //0xf0,
 int rep=0;  				//0xf3
 int repn =0;				//0xf2
 int some_address = 0;		//각 명령어의 address를 표시. 
-int check_prefix_line = 0;  
-int two_byte_opcode = 0;
-int three_byte_opcode = 0; 
+int check_prefix_line = 0;   
 //그냥 따로 함수를 만들어서 바로 출력하게 하자. 그리고 prefix값을 확인해서 check_prefix_line값이 2이상이면 pass
 /*================================*/
 
@@ -59,7 +64,7 @@ int three_byte_opcode = 0;
 //void command_line(); 
 void setup(char* binary, char* file_name, int argu_number); 
 char* command_line(char* file_name, unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, int symbol_number);
-void print_some_address(unsigned char* file, int* index);
+int print_some_address(unsigned char* file, int* index);
 void sib_func(unsigned char* file, int* index, int disp, char* sib_field);
 void disp_func(unsigned char* file, int* index, int disp, char* disp_field);
 void segment_sprintf(char* segment);	//세그먼트 레지스터를 넣을 문자열을 설정해줌   
@@ -70,6 +75,7 @@ char* dec_to_hex(int decimal);
 void prefix(char* rm_field); //이 함수안에서 segment_sprintf를 호출하자. 
 void rep_prefix_cat(char* rm_field);
 int check_elf(int file); 
+void print_instruction(char* ins, unsigned char opcode, int line_number);
 /*==================================================================================*/
 char* r16r32_rm8(unsigned char* file, int* index);
 char* r16r32_rm16(unsigned char* file, int* index);
@@ -158,7 +164,15 @@ void setup(char* binary, char* file_name, int argu_number)
 	}
 	copy_symbol_meta.size = symbol_number; 
 	
+	instruction.ins = (char**)malloc(sizeof(char*)*500);
+	for(i=0;i<500;i++)
+	{
+		instruction.ins[i] = (char*)malloc(sizeof(char*)*50); 
+	}
+	instruction.address = (int*)malloc(sizeof(int)*500); 
+
 	command_line(file_name, file, file_vol, symbol_meta,symbol_number); 
+
 	free(symbol_meta); 
 	free(copy_symbol_meta.offset); 
 	for(i=0;i<symbol_number;i++)
@@ -200,7 +214,8 @@ char* command_line(char* file_name, unsigned char* file, int file_vol, struct Sy
 		else if(!strncmp(data, "disasm", 6))
 		{
 			tok = strtok(data, " ");
-			tok = strtok(NULL, " "); 
+			tok = strtok(NULL, " ");
+		   	print_check =0;	
 			disasm(file, file_vol, symbol_meta, tok, symbol_number); //number :: symbol 개수 
 		}
 		else if(!strcmp(data, "quit"))
@@ -238,8 +253,9 @@ void check_symtab(int* check_symtab_offset, int e_shnum, Elf32_Shdr* section)
 //중요구문 call, cmp, test, jmp관련 명령일 때 초록색으로 표시 temp_opcode라고 변수를 선언한 뒤 받자. 
 int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* file, int* index)
 {	
+	int line_number=0; 
 	unsigned char temp_opcode = file[*index]; 
-	print_some_address(file, index);
+	line_number = print_some_address(file, index);
 	char ins[256]; 
 	memset(ins, '\0', 256); 
 	char* show_ins; 
@@ -247,17 +263,9 @@ int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* fil
 	show_ins = func(file, index); 
 	sprintf(ins,mnemonic, show_ins);
 	
-	/*if(temp_opcode == xxxxx)
-	{
-		printf("%c[1;31m",27);
-		printf("%s",ins);
-		printf("%c[0m",27);
-	}
-	else{
-		printf("%s",ins);  
-	}*/
 	rep_prefix_cat(ins); 
-	if((temp_opcode >= 0x70 && temp_opcode <= 0x7f) || (temp_opcode >= 0x80 && temp_opcode <= 0x83) || temp_opcode == 0x84 || temp_opcode == 0x85 || temp_opcode == 0xa8 || temp_opcode == 0xa9 || temp_opcode == 0xc2 ||temp_opcode == 0xc3 || temp_opcode == 0xe8)
+	print_instruction(ins, temp_opcode, line_number);
+	/*if((temp_opcode >= 0x70 && temp_opcode <= 0x7f) || (temp_opcode >= 0x80 && temp_opcode <= 0x83) || temp_opcode == 0x84 || temp_opcode == 0x85 || temp_opcode == 0xa8 || temp_opcode == 0xa9 || temp_opcode == 0xc2 ||temp_opcode == 0xc3 || temp_opcode == 0xe8)
 	{
 		printf("%c[1;32m",27);
 		printf("%s",ins);
@@ -265,10 +273,10 @@ int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* fil
 	}
 	else{
 		printf("%s", ins); 
-	}
+	} */
 
 	/*==============전역변수 초기화 구간==========================*/
-	segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
+	/*segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
 	operand_size=0; 		//0x67
 	operand_address=0; 		//0x66
 	lock=0;				    //0xf0, 
@@ -277,9 +285,7 @@ int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* fil
 	check_prefix_line =0;
 	byte_ptr = 0;
 	dword_ptr = 0;
-	word_ptr = 0; 
-	two_byte_opcode = 0;    //0x0f
-	three_byte_opcode = 0;
+	word_ptr = 0; */
 	/*===========================================================*/
 	free(show_ins);
     return 0;
@@ -287,7 +293,9 @@ int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* fil
 }
 int parse_no(char* mnemonic, unsigned char* file, int* index, int check)
 {
-	print_some_address(file, index);
+	int line_number=0;
+	unsigned char temp_opcode = file[*index]; 
+	line_number = print_some_address(file, index);
 	char ins[50] = {0, }; 
 	int line = file[*index];//뒤에 3개의 비트를 &7해서 reg값 찾기 
 	line = (line) & 0x7; 
@@ -304,14 +312,17 @@ int parse_no(char* mnemonic, unsigned char* file, int* index, int check)
 			sprintf(ins, mnemonic, reg_field);
 		}
 		rep_prefix_cat(ins);
-		printf("%s", ins);
+		print_instruction(ins, temp_opcode, line_number);
+		//printf("%s", ins);
 	}
 	else{
+		strcpy(ins, mnemonic);
 		rep_prefix_cat(ins);
-		printf("%s",mnemonic); 
+		print_instruction(ins, temp_opcode, line_number); 
+		//printf("%s",ins); 
 	}
 	/*==============전역변수 초기화 구간==========================*/
-	segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
+	/*segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
 	operand_size=0; 		//0x67
 	operand_address=0; 		//0x66
 	lock=0;				    //0xf0, 
@@ -320,15 +331,47 @@ int parse_no(char* mnemonic, unsigned char* file, int* index, int check)
 	check_prefix_line =0;
 	byte_ptr = 0;
 	dword_ptr = 0;
-	word_ptr =0;
-	two_byte_opcode = 0;
-	three_byte_opcode = 0;
+	word_ptr =0;*/
 	/*===========================================================*/
 }
+
+void print_instruction(char* ins, unsigned char opcode, int line_number)
+{
+	static int line=0;
+	if(print_check == 0){
+		if((opcode >= 0x70 && opcode <= 0x7f) || (opcode >= 0x80 && opcode <= 0x83) || opcode == 0x84 || opcode == 0x85 || opcode == 0xa8 || opcode == 0xa9 || opcode == 0xc2 ||opcode == 0xc3 || opcode == 0xe8)
+		{
+			printf("%c[1;32m",27);
+			printf("%s", ins);
+			printf("%c[0m",27);
+		}
+		else
+			printf("%s", ins); 
+		/*==============전역변수 초기화 구간==========================*/
+		segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
+		operand_size=0; 		//0x67
+		operand_address=0; 		//0x66
+		lock=0;				    //0xf0, 
+		rep=0;  				//0xf3
+		repn =0;				//0xf2
+		check_prefix_line =0;
+		byte_ptr = 0;
+		dword_ptr = 0;
+		word_ptr = 0; 
+		/*===========================================================*/
+	}
+	else if(print_check == 1){ //dynamic debugging mode 
+		strcpy(instruction.ins[line],ins);
+		instruction.address[line] = line_number; 
+		line++;
+	}
+}
+
 /*prefix가 2개 이상인 경우가 있으니 prefix를 읽을 때 마다 check++해서 1일 때만 출력하게 한다. */
-void print_some_address(unsigned char* file, int* index)
+int print_some_address(unsigned char* file, int* index)
 {
 	int i;
+	static int line_start = 0;
 	int line_number = 0;
 	//copy_symbol_meta
 	if(check_prefix_line == 1)
@@ -343,8 +386,9 @@ void print_some_address(unsigned char* file, int* index)
 		}
 		some_address = *index; 
 		line_number =  some_address - line_start;
-		printf("%08x <+%d>:\t", some_address, line_number);
+		printf("%5x <+%4d>:     ", some_address, line_number);
 	}
+	return line_number; 
 }
 /*
 본격적으로 바이트 코드를 읽어들임. 80~83까진 reg필드가 명령어를 구분 
@@ -1079,7 +1123,7 @@ char* moffset16_32(unsigned char* file, int* index)
 int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, char* input_symbol, int symbol_number)
 { 
 	
-	int save_index; 
+	int save_index;
 	int sym_index, check=0; 
 	for(sym_index=0;sym_index<symbol_number;sym_index++)
 	{
