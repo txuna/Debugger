@@ -38,6 +38,7 @@ struct Copy_Symbol_Meta{
 struct Copy_Symbol_Meta copy_symbol_meta; 
 
 //int sym_size; //symbol의 개수 
+int line_start = 0;
 int byte_ptr = 0;
 int dword_ptr = 0;
 int word_ptr = 0; 
@@ -328,6 +329,7 @@ int parse_no(char* mnemonic, unsigned char* file, int* index, int check)
 void print_some_address(unsigned char* file, int* index)
 {
 	int i;
+	int line_number = 0;
 	//copy_symbol_meta
 	if(check_prefix_line == 1)
 	{
@@ -335,11 +337,13 @@ void print_some_address(unsigned char* file, int* index)
 		{
 			if(*index == copy_symbol_meta.offset[i])
 			{
+				line_start = *index; 
 				printf("\n%08x: <%s>\n\n",*index, copy_symbol_meta.sym_name[i]); 
 			}
 		}
 		some_address = *index; 
-		printf("%4x:\t", some_address);
+		line_number =  some_address - line_start;
+		printf("%08x <+%d>:\t", some_address, line_number);
 	}
 }
 /*
