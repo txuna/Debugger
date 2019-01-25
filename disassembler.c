@@ -5,9 +5,16 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <ctype.h>
-#include <elf.h>
+//#include <elf.h>
 #include <linux/types.h>
 #include <errno.h>
+#include <sys/ptrace.h>
+#include <sys/user.h>
+#include <sys/reg.h>
+#include <sys/wait.h>
+
+//#include <sys/elf.h>
+#include "debug.h"
 //#include "dumpcode.h"
 
 /*============Variable===========*/
@@ -22,7 +29,7 @@ char* mov_segment[6] = {"es", "cs", "ss", "ds", "fs", "gs"}; //mov같은 경우 
 //typedef enum segment_registe {cs=0x2e, ss=0x36, ds=0x3e, es=0x26, fs=0x64, gs=0x65}Segment; 
 
 //Segment seg_reg; 
-
+/*
 struct Symbol_Meta{ //각 각의 심볼들의 이름과 address 
 	char sym_name[100]; 
 	int offset; 
@@ -34,17 +41,38 @@ struct Copy_Symbol_Meta{
 	int* offset;
     int size; 	
 };
+*/
+//instruction list
+/*
+typedef struct Instruction_List{
+	char ins[50]; 
+	unsigned addr; 
+	int line_number;
+	struct Instruction_List* next; 
+}ins_list; 
 
+ins_list* head_ins; //기준 노드 
+
+typedef struct BreakPoint{
+	void* addr; 
+	long orig_code; 
+	struct BreakPoint* next; 
+}breakpoint; 
+*/
+/////////////////////////////////////
+/*
 struct Instruction{
 	char** ins; 
-	int* address; 
-};
-
-struct Instruction instruction; 
+	int* address;
+    int* line_number; 	
+}; //이 구조체의 경우 다른 구조체와 달리 free하는 시점을 command가 끝난 시점으로 맞춘다. 
+*/
+//struct Instruction instruction; 
 struct Copy_Symbol_Meta copy_symbol_meta; 
-
+ins_list* head_ins;
 //int sym_size; //symbol의 개수 
 //int line_start = 0;
+unsigned virtual_addr = 0; 
 int print_check=0; 
 int byte_ptr = 0;
 int dword_ptr = 0;
@@ -55,62 +83,11 @@ int operand_address=0; 		//0x66
 int lock=0;				    //0xf0, 
 int rep=0;  				//0xf3
 int repn =0;				//0xf2
-int some_address = 0;		//각 명령어의 address를 표시. 
+unsigned some_address = 0;		//각 명령어의 address를 표시. 
 int check_prefix_line = 0;   
-//그냥 따로 함수를 만들어서 바로 출력하게 하자. 그리고 prefix값을 확인해서 check_prefix_line값이 2이상이면 pass
+//그냥 따로 함수를 만들어서 바로 출력하게 하자. 그리고 prefix값을 확인해서 check_prefix_line값이 2이상이면 passy
 /*================================*/
 
-/*============Fuction================================================================*/
-//void command_line(); 
-void setup(char* binary, char* file_name, int argu_number); 
-char* command_line(char* file_name, unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, int symbol_number);
-int print_some_address(unsigned char* file, int* index);
-void sib_func(unsigned char* file, int* index, int disp, char* sib_field);
-void disp_func(unsigned char* file, int* index, int disp, char* disp_field);
-void segment_sprintf(char* segment);	//세그먼트 레지스터를 넣을 문자열을 설정해줌   
-char* file_to_heap(char* name, int* file_vol); 
-int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta,  char* input_symbol, int symbol_number);
-void remove_char(char* str);
-char* dec_to_hex(int decimal);
-void prefix(char* rm_field); //이 함수안에서 segment_sprintf를 호출하자. 
-void rep_prefix_cat(char* rm_field);
-int check_elf(int file); 
-void print_instruction(char* ins, unsigned char opcode, int line_number);
-/*==================================================================================*/
-char* r16r32_rm8(unsigned char* file, int* index);
-char* r16r32_rm16(unsigned char* file, int* index);
-char* moffset16_32(unsigned char* file, int* index); 
-char* rel8(unsigned char* file, int* index); 
-char* rm8(unsigned char* file, int* index);
-char* m8(unsigned char* file, int* index);
-char* m32(unsigned char* file, int* index); 
-char* rm16r32(unsigned char* file, int* index);
-char* segment_rm16(unsigned char* file, int* index);
-char* rm16r32_segment(unsigned char* file, int* index); 
-char* r16r32_rm16r32_imme8(unsigned char* file, int* index); 
-char* rm8_imme8(unsigned char* file, int* index);
-char* rm16r32_imme16_32(unsigned char* file, int* index); 
-char* rm16r32_imme8(unsigned char* file, int* index); 
-char* r16r32_rm16r32_imme16_32(unsigned char* file, int* index);
-char* rm8_r8(unsigned char* file, int* index); 	//이 함수를 함수포인터로 두자.
-char* rm16r32_r16r32(unsigned char* file, int* index); 
-char* r8_rm8(unsigned char* file, int* index);
-char* r16r32_rm16r32(unsigned char* file, int* index); 
-char* imme8(unsigned char* file, int* index); 
-char* imme16_32(unsigned char* file, int* index);
-char* r16r32_imme16_32(unsigned char* file, int* index); 
-char* r16r32_xchg(unsigned char* file, int* index);
-char* rel16_32(unsigned char* file, int* index);
-/*===================================================================================*/
-Elf32_Ehdr elf_header(int file); 
-Elf32_Shdr* elf_section_header(Elf32_Ehdr elf, int file); 
-struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file); 
-void check_symtab(int* check_symtab_offset, int e_shnum, Elf32_Shdr* section);
-/*===================================================================================*/
-//인자 : mnemonic, 함수포인터, file(malloc), num(index)
-int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* file, int* index); 
-//parse와 parse_no는 명령어가 유동적인가, 정해저있는가에 따라 바뀜   
-int parse_no(char* mnemonic, unsigned char* file, int* index, int check); 
 
 
 /*================================*/
@@ -120,15 +97,18 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-void setup(char* binary, char* file_name, int argu_number)
+int setup(char* binary, char* file_name, int argu_number)
 {
+	int confirm_elf; 
+	pid_t child_pid; 
 	char input_symbol[100]; 
 	int fd = open(file_name, O_RDONLY);  //일단 임시로 여기서 열자
 	Elf32_Ehdr elf; 
 	Elf32_Shdr* section_header; 
+	Elf32_Phdr* program_header; 
 	struct Symbol_Meta* symbol_meta; 
 	int check_symtab_offset=0, strtab_offset, symtab_offset, i;
-   	int symbol_number; 	
+   	int symbol_number, program_virtual_memory_address; 	
 	if(argu_number != 2)
 	{
 		printf("Usage: ./%s <file_name>\n ",binary); 
@@ -137,60 +117,103 @@ void setup(char* binary, char* file_name, int argu_number)
 
 	int file_vol; 
 	unsigned char* file; 
+	int text_offset=0; 
+	int text_size=0; 
+
 	file = file_to_heap(file_name, &file_vol); 
 	
+	if(confirm_elf = check_elf(fd))
+	{
+		printf("this is not elf.\n");
+		return -1; 
+	}
+
 	elf = elf_header(fd); 
-	section_header = elf_section_header(elf, fd); 
+	program_virtual_memory_address = elf_program_header_load(elf, fd);
+	virtual_addr = program_virtual_memory_address; 
+
+	section_header = elf_section_header(elf, fd, &text_offset, &text_size);  //야기서 .text섹션 꺼내와야함. 
 	check_symtab(&check_symtab_offset, elf.e_shnum, section_header); //symtab의 위치를 확인 
+	
+	//text_offset = text_offset - program_virtual_memory_address; 
 	
 	strtab_offset = ((section_header+elf.e_shstrndx-1)->sh_offset); 
 	symtab_offset = (section_header+check_symtab_offset)->sh_offset;
 	symbol_number = (strtab_offset - symtab_offset) / 0x10; //struct의 크기만큼 나누어 개수를 확인 
-	symbol_meta = symbol_table(strtab_offset, symtab_offset, fd); 
+	symbol_meta = symbol_table(strtab_offset, symtab_offset, fd, program_virtual_memory_address); 
 	
 	close(fd); 
 	//아래코드는 symbol_meta구조체의 내용을 복사한다. 
-	copy_symbol_meta.sym_name = (char**)malloc(sizeof(char*)*symbol_number); //해제 필요 
+	copy_symbol_meta.sym_name = (char**)malloc(sizeof(char*)*symbol_number); 
     for(i=0;i<symbol_number;i++)
 	{
-		copy_symbol_meta.sym_name[i] = (char*)malloc(sizeof(char)*100);  //해제 필요 
+		copy_symbol_meta.sym_name[i] = (char*)malloc(sizeof(char)*100);
 	}
-	copy_symbol_meta.offset	= (int*)malloc(sizeof(int)*symbol_number);  //해제 필요 
+	copy_symbol_meta.offset	= (int*)malloc(sizeof(int)*symbol_number);
 
 	for(i=0;i<symbol_number;i++)
 	{
 		strcpy(copy_symbol_meta.sym_name[i], symbol_meta[i].sym_name);
-		copy_symbol_meta.offset[i] = symbol_meta[i].offset; 
+		copy_symbol_meta.offset[i] = symbol_meta[i].offset;// - 0x08048000; 
+		//printf("%X\n", copy_symbol_meta.offset[i]);
 	}
 	copy_symbol_meta.size = symbol_number; 
 	
-	instruction.ins = (char**)malloc(sizeof(char*)*500);
-	for(i=0;i<500;i++)
+	child_pid = fork(); 
+	
+	if(child_pid == 0)
 	{
-		instruction.ins[i] = (char*)malloc(sizeof(char*)*50); 
+		child_ptrace(file_name);
 	}
-	instruction.address = (int*)malloc(sizeof(int)*500); 
+	else if(child_pid > 0){
+		int status; 
+		wait(&status); 
+		
+		breakpoint* head_bp = (breakpoint*)malloc(sizeof(breakpoint)); 
+		head_bp->next = NULL; 
 
-	command_line(file_name, file, file_vol, symbol_meta,symbol_number); 
+		command_line(child_pid, file_name, file, file_vol, symbol_meta, symbol_number, head_bp, text_offset, text_size); 
 
-	free(symbol_meta); 
-	free(copy_symbol_meta.offset); 
-	for(i=0;i<symbol_number;i++)
-	{
-		free(copy_symbol_meta.sym_name[i]); 
+		ptrace(PTRACE_DETACH, child_pid, 0, 0);
+		free(symbol_meta); 
+		free(copy_symbol_meta.offset); 
+		for(i=0;i<symbol_number;i++)
+		{
+			free(copy_symbol_meta.sym_name[i]); 
+		}
+		free(copy_symbol_meta.sym_name);
 	}
-	free(copy_symbol_meta.sym_name);
-	//return 0;
-
+	else{
+		perror("fork()");
+		return -1; 
+	}
+	return 0; 
 }
 
-char* command_line(char* file_name, unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, int symbol_number)
+int child_ptrace(const char* program_name) //pipe연결해서 신호주면 다시 traceme할 수 있게 하자
 {
+	if(ptrace(PTRACE_TRACEME, 0, 0, 0) < 0)
+	{
+		perror("ptrace"); 
+		return -1; 
+	}
+	execl(program_name, program_name, 0);
+}
+
+char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, int symbol_number, breakpoint* head_bp, int text_offset, int text_size)
+{
+	unsigned addr; 
+	int run_bit=0; 
+	head_ins = (ins_list*)malloc(sizeof(ins_list));  //명령어 출력 리스트 
+	head_ins->next = NULL;  //기준 노드 
+	print_check = 1;
+	disasm(file, file_vol, symbol_meta, ".text", symbol_number, text_offset, text_size); 
 	int i; 
 	char data[100] = {0, }; 
-	char* tok; 
+	char *tok, *ptr; 
 	printf("disassembler v1.0.0\n");
 	printf("if you want to help, input : $sd help\n");
+	
 	while(1)
 	{
 		printf("%c[1;31m",27);
@@ -203,7 +226,7 @@ char* command_line(char* file_name, unsigned char* file, int file_vol, struct Sy
 		if(!strcmp(data, "print symbol"))
 		{
 			printf("===============================================\n");
-			printf("[%s] symbol name\n",file);
+			printf("[%s] symbol name\n",file_name);
 			for(i=0;i<symbol_number;i++)
 			{
 				printf("[%d] : %s\n",i,symbol_meta[i].sym_name);
@@ -213,12 +236,13 @@ char* command_line(char* file_name, unsigned char* file, int file_vol, struct Sy
 		}
 		else if(!strncmp(data, "disasm", 6))
 		{
+			print_check = 0;  //disasm mode 
 			tok = strtok(data, " ");
 			tok = strtok(NULL, " ");
 		   	print_check =0;	
-			disasm(file, file_vol, symbol_meta, tok, symbol_number); //number :: symbol 개수 
+			disasm(file, file_vol, symbol_meta, tok, symbol_number,0 ,0); //number :: symbol 개수 
 		}
-		else if(!strcmp(data, "quit"))
+		else if(!strcmp(data, "quit") || !strcmp(data, "q"))
 		{
 			exit(1);
 		}
@@ -227,9 +251,93 @@ char* command_line(char* file_name, unsigned char* file, int file_vol, struct Sy
 			printf("\n\n");
 			printf("$sd print symbol :: print <%s>'s <symbol_name>\n", file_name); 
 			printf("$sd disasm <symbol_name> :: disassembly <symbol_name>\n");
-			printf("$sd quit :: quit debugger\n");
-			printf("will adding...\n\n");
+			printf("$sd quit or q :: quit debugger\n");
+			printf("$sd b <direct address> :: create breakpoint in address\n");
+			printf("$sd r :: running program\n"); 
+			printf("$sd c :: continue until breakpoint\n");
+			printf("$sd n :: step over\n");
+			printf("$sd s :: step into\n");
+			printf("$sd info b :: print breakpoint\n");
+			printf("$sd del <breakpoint index> :: delete breakpoint <index>\n");
+			printf("$sd dump <address> <size> :: dump memory from addr as size\n"); 
+			printf("$sd set <regsiter> <value> :: set register with value\n"); 
+			printf("will adding...aa\n\n");
 		}
+		else if(!strncmp(data, "b", 1)) //b *symbol_name+line_number, b *0x~~ direct breakpoint
+		{//지금은 direct 주소만 받게 하자. 
+			ptr = NULL; 
+			tok = strtok(data, " ");
+			tok = strtok(NULL, " ");
+			addr = strtol(tok, &ptr, 16); 
+			create_breakpoint(pid, head_bp, (void*)addr); 
+		}
+		else if(!strncmp(data, "del", 3))
+		{
+			ptr = NULL; 
+			tok = strtok(data, " "); 
+			tok = strtok(NULL, " "); 
+			int bp_number=0; 
+			bp_number = strtol(tok, &ptr, 10); 
+			delete_breakpoint(pid, head_bp, bp_number);
+		}
+		else if(!strcmp(data, "r"))
+		{
+			//printf("aaaa\n");
+			//print_check = 1; //dynamic debugging mode
+			//printf("test code : %d, %d\n",text_offset, text_size);
+			//disasm(file, file_vol, symbol_meta, ".text", symbol_number, text_offset, text_size); 
+			run_instruction(pid, head_bp, &run_bit, head_ins);
+		}
+		else if(!strcmp(data, "c"))
+		{
+			cont_instruction(pid, head_bp, &run_bit, head_ins);
+		}
+		else if(!strcmp(data, "n"))
+		{
+			printf("haha setting...\n");
+		}
+		else if(!strcmp(data, "s"))
+		{
+			step_into(pid, head_bp, &run_bit, head_ins); 
+		}
+		else if(!strncmp(data, "dump", 4))
+		{
+			unsigned from_addr; 
+			int size; 
+			ptr = NULL; 
+			tok = strtok(data, " ");
+			tok = strtok(NULL, " "); 
+			from_addr = strtol(tok, &ptr, 16);
+			ptr = NULL; 
+			tok = strtok(NULL, " "); 
+			size = strtol(tok, &ptr, 16); //변환 오류 ///////////////////////////////////////////////////
+			//printf("================================================test : %x",size);
+			dump_process_memory(pid, from_addr, size);
+		}
+		else if(!strcmp(data, "info b"))
+		{
+			print_breakpoint(pid, head_bp); 
+		}
+		else if(!strncmp(data, "set", 3)) //error 
+		{
+			int value;
+			char* tmp; 
+			ptr = NULL; 
+			tok = strtok(data, " ");
+			tmp = tok; 
+			tok = strtok(NULL, " ");
+			value = strtol(tok, &ptr, 16); 
+			set_register(pid, tmp, value);
+		}
+		else if(!strncmp(data, "inject ~", 6)) //change memory 
+		{
+		}
+		else if(!strcmp(data, "test"))
+		{
+			print_ins(); 
+		}
+		else
+			continue; 
 	}
 }
 
@@ -254,6 +362,7 @@ void check_symtab(int* check_symtab_offset, int e_shnum, Elf32_Shdr* section)
 int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* file, int* index)
 {	
 	int line_number=0; 
+	unsigned addr = 0;
 	unsigned char temp_opcode = file[*index]; 
 	line_number = print_some_address(file, index);
 	char ins[256]; 
@@ -265,28 +374,6 @@ int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* fil
 	
 	rep_prefix_cat(ins); 
 	print_instruction(ins, temp_opcode, line_number);
-	/*if((temp_opcode >= 0x70 && temp_opcode <= 0x7f) || (temp_opcode >= 0x80 && temp_opcode <= 0x83) || temp_opcode == 0x84 || temp_opcode == 0x85 || temp_opcode == 0xa8 || temp_opcode == 0xa9 || temp_opcode == 0xc2 ||temp_opcode == 0xc3 || temp_opcode == 0xe8)
-	{
-		printf("%c[1;32m",27);
-		printf("%s",ins);
-		printf("%c[0m",27);
-	}
-	else{
-		printf("%s", ins); 
-	} */
-
-	/*==============전역변수 초기화 구간==========================*/
-	/*segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
-	operand_size=0; 		//0x67
-	operand_address=0; 		//0x66
-	lock=0;				    //0xf0, 
-	rep=0;  				//0xf3
-	repn =0;				//0xf2
-	check_prefix_line =0;
-	byte_ptr = 0;
-	dword_ptr = 0;
-	word_ptr = 0; */
-	/*===========================================================*/
 	free(show_ins);
     return 0;
 
@@ -294,6 +381,7 @@ int parse(char* mnemonic, char*(*func)(unsigned char*, int*), unsigned char* fil
 int parse_no(char* mnemonic, unsigned char* file, int* index, int check)
 {
 	int line_number=0;
+	unsigned addr = 0;
 	unsigned char temp_opcode = file[*index]; 
 	line_number = print_some_address(file, index);
 	char ins[50] = {0, }; 
@@ -321,34 +409,24 @@ int parse_no(char* mnemonic, unsigned char* file, int* index, int check)
 		print_instruction(ins, temp_opcode, line_number); 
 		//printf("%s",ins); 
 	}
-	/*==============전역변수 초기화 구간==========================*/
-	/*segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
-	operand_size=0; 		//0x67
-	operand_address=0; 		//0x66
-	lock=0;				    //0xf0, 
-	rep=0;  				//0xf3
-	repn =0;				//0xf2
-	check_prefix_line =0;
-	byte_ptr = 0;
-	dword_ptr = 0;
-	word_ptr =0;*/
-	/*===========================================================*/
 }
 
 void print_instruction(char* ins, unsigned char opcode, int line_number)
-{
-	static int line=0;
+{ //이거를 그냥 따로 함수를 만들어서 리스트로 할 수 있게 해야겠다. 
+	unsigned addr = some_address; 
 	if(print_check == 0){
-		if((opcode >= 0x70 && opcode <= 0x7f) || (opcode >= 0x80 && opcode <= 0x83) || opcode == 0x84 || opcode == 0x85 || opcode == 0xa8 || opcode == 0xa9 || opcode == 0xc2 ||opcode == 0xc3 || opcode == 0xe8)
+		if((opcode >= 0x70 && opcode <= 0x7f) || (opcode >= 0x38 && opcode <= 0x3d)  ||(opcode >= 0x80 && opcode <= 0x83) || opcode == 0x84 || opcode == 0x85 || opcode == 0xa8 || opcode == 0xa9 || opcode == 0xc2 ||opcode == 0xc3 || opcode == 0xe8)
 		{
 			printf("%c[1;32m",27);
 			printf("%s", ins);
 			printf("%c[0m",27);
+			//ins_add(ins, addr, line_number); //test  
 		}
 		else
 			printf("%s", ins); 
+			//ins_add(ins, addr, line_number); 
 		/*==============전역변수 초기화 구간==========================*/
-		segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
+		/*segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
 		operand_size=0; 		//0x67
 		operand_address=0; 		//0x66
 		lock=0;				    //0xf0, 
@@ -357,22 +435,83 @@ void print_instruction(char* ins, unsigned char opcode, int line_number)
 		check_prefix_line =0;
 		byte_ptr = 0;
 		dword_ptr = 0;
-		word_ptr = 0; 
+		word_ptr = 0; */
 		/*===========================================================*/
 	}
 	else if(print_check == 1){ //dynamic debugging mode 
-		strcpy(instruction.ins[line],ins);
-		instruction.address[line] = line_number; 
-		line++;
+		ins_add(ins, addr, line_number);
+		/*이는 그냥 print_check함수를 두지말고 .text섹션 시작부터 아예 끝까지 disasm하고 eip랑 비교해서 7줄 출력 ㅇㅇ 하기로 하자 */
+	}
+	/*==============전역변수 초기화 구간==========================*/
+	segment_override=0;     //0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65
+	operand_size=0; 		//0x67
+	operand_address=0; 		//0x66
+	lock=0;				    //0xf0, 
+	rep=0;  				//0xf3
+	repn =0;				//0xf2
+	check_prefix_line =0;
+	byte_ptr = 0;
+	dword_ptr = 0;
+	word_ptr = 0; 
+	/*===========================================================*/
+
+}
+
+void print_ins()
+{
+	int i=0; 
+	ins_list* curr = head_ins->next; 
+	//printf("test code\n"); 
+	while(curr != NULL)
+	{
+		printf("    %X <+%4d>   %s",curr->addr, curr->line_number, curr->ins); //현재 eip에 => 삽입 
+		i++; 
+		curr = curr->next;
+	}
+}
+
+void ins_add(char* string, unsigned addr, int line_number)
+{
+	//printf("haha\n");
+	ins_list* ins = (ins_list*)malloc(sizeof(ins_list)); 
+	strcpy(ins->ins,string); 
+	ins->addr = addr; 
+	ins->line_number = line_number;
+	ins->next = NULL; 
+	ins_list* temp = head_ins;
+	while(temp->next != NULL)
+	{
+		temp = temp->next; 
+	}
+	temp->next = ins; 
+
+}
+
+int ins_delete()
+{
+	ins_list* curr = head_ins->next; 
+	ins_list* before = head_ins; 
+	if(curr == NULL)
+	{
+		return 0;
+	}
+	while(head_ins->next != NULL)
+	{
+		head_ins->next = curr->next;
+		free(curr); 
+		curr = head_ins->next; 
+		
 	}
 }
 
 /*prefix가 2개 이상인 경우가 있으니 prefix를 읽을 때 마다 check++해서 1일 때만 출력하게 한다. */
 int print_some_address(unsigned char* file, int* index)
 {
-	int i;
+	int i; 
+	//unsigned some_address; 
 	static int line_start = 0;
 	int line_number = 0;
+	//unsigned address = *index + virtual_addr;/*virtual address */
 	//copy_symbol_meta
 	if(check_prefix_line == 1)
 	{
@@ -380,13 +519,16 @@ int print_some_address(unsigned char* file, int* index)
 		{
 			if(*index == copy_symbol_meta.offset[i])
 			{
-				line_start = *index; 
-				printf("\n%08x: <%s>\n\n",*index, copy_symbol_meta.sym_name[i]); 
+				line_start = *index + virtual_addr; 
+				//virtual_addr = line_starti;
+				if(print_check == 0) //only! disasm mode 
+					printf("\n0x%08x: <%s>\n\n",virtual_addr + *index, copy_symbol_meta.sym_name[i]); // 
 			}
 		}
-		some_address = *index; 
+		some_address = *index + virtual_addr; 
 		line_number =  some_address - line_start;
-		printf("%5x <+%4d>:     ", some_address, line_number);
+		if(print_check == 0)
+			printf("0x%08x <+%4d>:     ", some_address, line_number);
 	}
 	return line_number; 
 }
@@ -704,7 +846,7 @@ void disp_func(unsigned char* file, int* index, int disp, char* disp_field)
 char* rel16_32(unsigned char* file, int* index)
 {
 	int check=0;
-	int rel32 = *index; 
+	unsigned rel32 = *index; 
 	int jump_distance, i; 
 	int disp32[4] = {0, }; 
 	char temp[20] = {0, }; 
@@ -716,7 +858,7 @@ char* rel16_32(unsigned char* file, int* index)
 	}
 	sprintf(temp, "%02x%02x%02x%02x", disp32[3], disp32[2], disp32[1], disp32[0]); 
 	jump_distance = strtol(temp, NULL, 16); 
-	rel32 = rel32 + 5 + jump_distance; 
+	rel32 = rel32 + 5 + jump_distance + virtual_addr; 
 	//sprintf(final,"%x",rel32); 
  	for(i=0;i<copy_symbol_meta.size;i++)
 	{
@@ -735,11 +877,11 @@ char* rel16_32(unsigned char* file, int* index)
 char* rel8(unsigned char* file, int* index) 
 {
 	int check=0; 
-	int rel8 = *index; 
-	char jump_distance = file[++(*index)]; 
+	unsigned rel8 = *index; 
+	unsigned char jump_distance = file[++(*index)]; 
 	//if(jump_distance >= 0)
 
-	rel8 = rel8 + jump_distance + 2;
+	rel8 = rel8 + jump_distance + 2 + virtual_addr;
     char* final = (char*)malloc(50); 
 	memset(final, '\0', 50); 
 	//sprintf(final, "%x", rel8);
@@ -1120,28 +1262,38 @@ char* moffset16_32(unsigned char* file, int* index)
 
 }
 
-int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, char* input_symbol, int symbol_number)
+int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, char* input_symbol, int symbol_number, int text_offset, int text_size)
 { 
 	
+	int index, size; 
 	int save_index;
 	int sym_index, check=0; 
-	for(sym_index=0;sym_index<symbol_number;sym_index++)
+	if(text_offset == 0 && text_size == 0)
 	{
-		if(!strcmp(input_symbol, symbol_meta[sym_index].sym_name))
+		for(sym_index=0;sym_index<symbol_number;sym_index++)
 		{
-			check = sym_index;
-			break;
+			if(!strcmp(input_symbol, symbol_meta[sym_index].sym_name))
+			{
+				check = sym_index;
+				break;
+			}
 		}
+		if(check == 0)
+		{
+			printf("%s symbol isn't exist!\n",input_symbol); 
+			return 1;
+		}
+		index=symbol_meta[check].offset;
+		save_index = index;
+	   	size = save_index + symbol_meta[check].size; 	
 	}
-	if(check == 0)
-	{
-		printf("%s symbol isn't exist!\n",input_symbol); 
-		return 1;
+	else{
+		index = text_offset; 
+		size = index + text_size;
 	}
-	int index=symbol_meta[check].offset;
-	save_index = index; 
+	//printf("index : %d\n size : %d\n",index, size);
 	
-	while(index < save_index+symbol_meta[check].size) //file_vol
+	while(index < size) //file_vol
 	{
 		check_prefix_line++;
 		switch(file[index])
@@ -1489,7 +1641,7 @@ int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, c
 			case 0xc9: parse_no("leave\n", file, &index, 0); break; 
 			case 0xca: 
 			case 0xcb: 
-			case 0xcc: parse_no("int 3\n", file, &index, 0); break; 
+			case 0xcc: parse_no("int3\n", file, &index, 0); break; 
 			case 0xcd: parse("int %s\n", imme8, file, &index); break; //여기서 imme8은 unsigned char임. 
 			case 0xce: parse_no("into\n", file, &index, 0); break;
 			case 0xcf: parse_no("iretd\n", file, &index, 0); break; 
@@ -1581,7 +1733,7 @@ int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, c
 			case 0xf1: 		   
 			case 0xf2: repn=1; print_some_address(file, &index);  break;
 			case 0xf3: rep=1; print_some_address(file, &index); break;
-			case 0xf4: parse_no("hlt", file, &index, 0); break;
+			case 0xf4: parse_no("hlt\n", file, &index, 0); break;
 			case 0xf8: parse_no("clc\n", file, &index, 0); break; 
 			case 0xf9: parse_no("stc\n", file, &index, 0); break; 
 			case 0xfa: parse_no("cli\n", file, &index, 0); break; 
@@ -1681,6 +1833,7 @@ char* file_to_heap(char* name, int* file_vol)
 	return file;
 }
 //동적활당한 이차원 배열을 반환해야함. 
+/*
 char** elf_parsing(int file)
 {
 	char** symbol_name = (char**)malloc(sizeof(char*)*3000); 
@@ -1694,7 +1847,7 @@ char** elf_parsing(int file)
 	elf = elf_header(file); 
 	section_header = elf_section_header(elf, file); 
 	
-}
+}*/
 
 Elf32_Ehdr elf_header(int file)
 {
@@ -1706,19 +1859,60 @@ Elf32_Ehdr elf_header(int file)
 	return elf32; 
 }
 
-Elf32_Shdr* elf_section_header(Elf32_Ehdr elf, int file)
+Elf32_Shdr* elf_section_header(Elf32_Ehdr elf, int file, int* text_offset, int* text_size) 
+	//offset에는 virtual빼야함. 
 {
-	int i, j; 
+	char name; 
+	char** section_name = (char**)malloc(sizeof(char*)*elf.e_shnum);
+	int i, j=0; 
+	for(i=0;i<elf.e_shnum;i++)
+	{
+		section_name[i] = (char*)malloc(sizeof(char)*100); 
+	}
+
 	Elf32_Shdr* section_header = (Elf32_Shdr*)malloc(sizeof(Elf32_Shdr) * elf.e_shnum); 
 	lseek(file, elf.e_shoff,SEEK_SET);
 
 	for(i=0;i<elf.e_shnum;i++)
 		read(file, &section_header[i], sizeof(Elf32_Shdr)); 
 
+	j=0; 
+	/*find section_name*/
+	for(i=0;i<elf.e_shnum;i++)
+	{
+		lseek(file, section_header[elf.e_shstrndx].sh_offset+section_header[i].sh_name, SEEK_SET);
+		while(read(file, &name, 1))
+		{
+			if(name == '\0')
+				break; 
+			section_name[i][j] = name; 
+			j++; 
+		}
+		section_name[i][j] = '\0'; 
+		j=0;
+	}
+	/*find .text section file offset and size*/
+	for(i=0;i<elf.e_shnum;i++)
+	{
+		if(!strcmp(section_name[i], ".text"))
+		{
+			*text_offset = section_header[i].sh_offset; 
+			printf("text : %d\n",*text_offset);
+			*text_size = section_header[i].sh_size;
+			printf("text : %d\n",*text_size);
+		}
+	}
+
+	for(i=0;i<elf.e_shnum;i++)
+	{
+		free(section_name[i]); 
+	}
+	free(section_name); 
+
 	return section_header; 
 }
 
-struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file)
+struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file, int program_virtual_memory_address)
 {
 	//struct Symbol_Meta* symbol_meta; 
 
@@ -1734,7 +1928,7 @@ struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file)
 		read(file, &symbol[i], sizeof(Elf32_Sym)); 
 
 	for(i=0;i<size;i++)	{
-		symbol_meta[i].offset = symbol[i].st_value;  //symbol offset 
+		symbol_meta[i].offset = symbol[i].st_value - program_virtual_memory_address;  //symbol offset 
 		symbol_meta[i].size = symbol[i].st_size;  //symbol_size 
 	}
 	for(i=0;i<size;i++)
@@ -1752,6 +1946,34 @@ struct Symbol_Meta* symbol_table(int strtab_offset, int symtab_offset, int file)
 	}
 	free(symbol); 
 	return symbol_meta; 
+}
+
+int elf_program_header_load(Elf32_Ehdr elf, int file)
+{
+	int program_header_offset = elf.e_phoff; 
+	int program_header_index_number = elf.e_phnum; 
+	Elf32_Phdr* program_header_table = (Elf32_Phdr*)malloc(sizeof(Elf32_Phdr) * program_header_index_number); 
+	int i;
+    int program_virtual_memory_address=0; 	
+
+	//printf("test 1 : %d\n",program_header_index_number);
+	lseek(file, program_header_offset, SEEK_SET); 
+	
+	for(i=0;i<program_header_index_number;i++)
+	{
+		read(file, &program_header_table[i], sizeof(Elf32_Phdr)); 	
+	}
+	for(i=0;i<program_header_index_number;i++)
+	{
+		if(program_header_table[i].p_type == 0x1)
+		{
+			program_virtual_memory_address = program_header_table[i].p_vaddr;
+			break; 
+		}
+		//printf("test : %d\n",program_header_table[i].p_type); 
+	}
+
+	return program_virtual_memory_address;//virtual memory address
 }
 
 int check_elf(int file)
@@ -1776,3 +1998,62 @@ int check_elf(int file)
 	return 0;
 }
 
+void show_information(pid_t pid, ins_list* head_ins)
+{
+	int i=0, j=0, eip_pos=1;
+   	unsigned data=0;
+	struct user_regs_struct regs; 
+	system("clear");
+	ptrace(PTRACE_GETREGS, pid, 0, &regs); 
+	printf("[--------------------register--------------------]\n"); 
+	printf("EAX: 0x%lX\n", regs.eax); //만약 레지스터에 주소값처럼 되어있으면 거기 dump뜬것도 보여주자. 
+ 	printf("EBX: 0x%lX\n", regs.ebx);
+	printf("ECX: 0x%lX\n", regs.ecx);
+	printf("EDX: 0x%lX\n", regs.edx); 
+	printf("ESI: 0x%lX\n", regs.esi);
+	printf("EDI: 0x%lX\n", regs.edi);
+	printf("EBP: 0x%lX\n", regs.ebp); 
+	printf("ESP: 0x%lX\n", regs.esp); 
+	printf("EIP: 0x%lX\n", regs.eip); 
+	//printf("EFLAGS:\n"); //
+	printf("[----------------------code----------------------]\n");	
+	
+	ins_list* curr = head_ins->next; 
+	
+	while(curr != NULL)
+	{
+		if(curr->addr == regs.eip)
+		{
+			break;
+		}
+		curr = curr->next; 
+		eip_pos++; 
+	}
+	for(i=0;i<9;i++)
+	{
+		if(curr == NULL)
+		{
+			printf("How about a banana for dinner this evening?\n"); 
+			break;
+		}
+		if(regs.eip == curr->addr)
+		{
+			printf("%c[1;32m",27);
+			printf(" => %x <+%4d> %s",curr->addr, curr->line_number ,curr->ins);
+			printf("%c[0m",27); 
+		}
+		else
+			printf("    %x <+%4d> %s",curr->addr, curr->line_number, curr->ins);
+		curr = curr->next; 
+		if(curr == NULL)
+			break;
+	}	
+	printf("[----------------------stack---------------------]\n");
+	for(i=0, j=0;i<=28;i+=4, j++)
+	{
+		data = ptrace(PTRACE_PEEKDATA, pid, regs.esp+j*4, 0);
+		printf("%04d| %p --> 0x%X\n",i,(void*)(regs.esp+j*4),data); 
+	}
+	printf("[------------------------------------------------]\n");
+
+}

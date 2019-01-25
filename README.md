@@ -18,3 +18,5 @@ Email : b7712983@naver.com
 2019/1/14 :: I add command line to clean interface ! and i add <line number>
 
 2019/1/21 :: I add breakpoint list 
+
+2019/1/26 :: I finished my debugger, GG but, have many bug XD, i will fix!
