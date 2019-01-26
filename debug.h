@@ -27,6 +27,7 @@ typedef struct Instruction_List{
 typedef struct BreakPoint{
 	void* addr; 
 	long orig_code; 
+	//long orig_code; 
 	struct BreakPoint* next;
 }breakpoint; 
 
@@ -66,6 +67,7 @@ void print_ins();
 int child_ptrace(const char* program_name);
 int run_debugger(pid_t pid, const char* program_name); 
 void show_information(pid_t pid, ins_list* ins); 
+void info_register(pid_t pid);
 /*==================================================================================*/
 char* r16r32_rm8(unsigned char* file, int* index);
 char* r16r32_rm16(unsigned char* file, int* index);

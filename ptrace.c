@@ -149,6 +149,7 @@ void print_breakpoint(pid_t pid, breakpoint* head_bp)
 		i++; 
 		curr = curr->next; 
 	}
+	printf("\n");
 }
 
 int delete_breakpoint(pid_t pid, breakpoint* head_bp, int index)
@@ -271,7 +272,7 @@ int cont_instruction(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* hea
 		if(regs.eip == (long)(bp->addr))
 		{
 			data = ptrace(PTRACE_PEEKTEXT, pid, bp->addr, 0); 
-			assert((data & 0xFF) == TRAP_INST);
+			//assert((data & 0xFF) == TRAP_INST);
 			ptrace(PTRACE_POKETEXT, pid, bp->addr, (data & TRAP_MASK) | (bp->orig_code & 0xFF));
 			ptrace(PTRACE_SINGLESTEP, pid, 0, 0); 
 			wait(&wait_status); 
@@ -346,7 +347,9 @@ int step_into(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* head_ins)
 		{
 			/*temp disable breakpoint not delete*/
 			unsigned data = ptrace(PTRACE_PEEKTEXT, pid, bp->addr, 0); 
-			assert((data & 0xFF) == TRAP_INST); 
+			printf("test : %x\n",data);
+			//assert((data & 0xFF) == TRAP_INST); 
+			//ptrace(PTRACE_POKETEXT, pid, bp->addr, (bp->orig_code & TRAP_MASK) | TRAP_INST);
 			ptrace(PTRACE_POKETEXT, pid, bp->addr, (data & TRAP_MASK) | (bp->orig_code & 0xFF)); 
 			
 			ptrace(PTRACE_SINGLESTEP, pid, 0, 0); 
@@ -392,108 +395,6 @@ void dump_process_memory(pid_t pid, unsigned from_addr, unsigned size)
 	}
 	printf("------------------------------------\n");
 }
-/*
-void command_line(pid_t pid, breakpoint* head_bp)
-//command도 disassembler.c에서 호출가능하게 하자. 여기서 fork하자. 
-{
-	unsigned data, size, value;
-	char regis[10] = {0, };	
-	char re_value[10] = {0, }; 
-	unsigned addr = 0;
-	char* ptr = NULL; 
-	char addr_string[20] = {0, }; 
-   	int run_bit = 0;
-	int index;	
-	while(1)
-	{
-		printf("\n1. step_into\n2. step_over\n3. create breakpoint\n4. continueue\n5. delete breakpoint\n6. breakpoint list\n7. run\n8. dump_process_memory\n9. inject_process_memory\n10. set register\n");
-		printf(" : "); 
-		scanf("%d", &data); 
-		switch(data)
-		{
-			case 1:
-				step_into(pid, head_bp, &run_bit);
-				break; 
-			
-			case 2:
-				step_over(pid, head_bp, &run_bit); 
-				break;
-
-			case 3:
-				printf("\ninput addr : ");
-				scanf("%s", addr_string);
-			   	addr = strtol(addr_string, &ptr, 16);	
-				//printf("aaaaaa : %p\n",(void*)addr);	
-				create_breakpoint(pid, head_bp, (target_addr_t)addr);
-				break;
-
-			case 4:
-				cont_instruction(pid, head_bp, &run_bit); 
-				break;
-
-			case 5:
-				printf("\ninput index : ");
-				scanf("%d", &index); 
-				disable_breakpoint(pid, head_bp, index); 
-				break; 
-
-			case 6:
-				print_breakpoint(pid, head_bp); 
-				break; 
-
-			case 7:
-				run_instruction(pid, head_bp, &run_bit);
-				break;
-			case 8:
-				memset(addr_string, '\0', 20); 
-				ptr = NULL; 
-				printf("\ninput address : ");
-				scanf("%s", addr_string); 
-				addr = strtol(addr_string, &ptr, 16); 
-				printf("\ninput size : "); 
-				scanf("%d", &size); 
-				//printf("test code : %lX\n",addr);
-				dump_process_memory(pid, addr, size); 
-				break; 
-
-			case 9:
-				
-				memset(addr_string, '\0', 20); 
-				ptr = NULL; 
-				printf("input address : "); 
-				scanf("%s",addr_string); 
-				addr = strtol(addr_string, &ptr, 16); 
-				printf("\ninput data : "); 
-				scanf("%d",&data); 
-				inject_process_memory(pid, addr, data); 
-				
-				break; 
-
-			case 10: //문자열로 받고 strtol해야하네 
-				ptr = NULL; 
-				printf("input register :");
-				scanf("%s", regis); 
-				printf("input data :"); 
-				scanf("%s", re_value);
-				value = strtol(re_value, &ptr, 16); 
-				set_register(pid, regis, value);
-				break; 
-
-			default:
-				break;
-		}
-	}
-	command:
-	1. r :: r를 click시 run_bit 설정하게  //ptrace_cont해야하나. 
-	2. c :: run_bit를 설정하자. 
-	3. n :: run_bit를 설정하자.  
-	4. s :: run_bit를 설정하자. 
-	5. b :: *main+12 or direct addr
-	6. info b :: print breakpoint 
-	7. print_memory x ~ y ::  x부터 y까지 dumpcode해서 보여줌. dumpcode.h
-	8. 	
-}	
-*/
 
 int create_breakpoint(pid_t pid, breakpoint* head_bp, target_addr_t addr)  //기준 노드(head_bp)를 중심. 
 {
@@ -510,35 +411,6 @@ int create_breakpoint(pid_t pid, breakpoint* head_bp, target_addr_t addr)  //기
 	bp->orig_code = ptrace(PTRACE_PEEKTEXT, pid, bp->addr, 0); 
 	enable_breakpoint(pid, bp); //해당 bp를 넘김 여긴 head_bp를 넘겨서 순회할 필요가 없음.  
 }
-/*
-target_addr_t get_eip(pid_t pid)
-{
-	struct user_regs_struct regs;
-	ptrace(PTRACE_GETREGS, pid, 0, &regs);
-   	return (target_addr_t)regs.eip; 	
-}
-*/
-/*
-int run_debugger(pid_t pid, const char* program_name)
-{
-	int wait_status; 
-	wait(&wait_status); 
-	breakpoint* head_bp = (breakpoint*)malloc(sizeof(breakpoint)); 
-	head_bp->next = NULL; 
-	//command : b* main+12 or direct addr
-	command_line(pid, head_bp); 
-}
-
-int child_ptrace(const char* program_name)
-{
-	if(ptrace(PTRACE_TRACEME, 0, 0, 0) < 0)
-	{
-		perror("ptrace");
-		return -1;  
-	}
-	execl(program_name, program_name, 0); 
-}
-*/
 
 
 

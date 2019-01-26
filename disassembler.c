@@ -211,7 +211,7 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 	int i; 
 	char data[100] = {0, }; 
 	char *tok, *ptr; 
-	printf("disassembler v1.0.0\n");
+	printf("su debugger v1.0.0\n");
 	printf("if you want to help, input : $sd help\n");
 	
 	while(1)
@@ -248,9 +248,9 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 		}
 		else if(!strcmp(data, "help"))
 		{
-			printf("\n\n");
+			printf("\n");
 			printf("$sd print symbol :: print <%s>'s <symbol_name>\n", file_name); 
-			printf("$sd disasm <symbol_name> :: disassembly <symbol_name>\n");
+			printf("$sd disasm <symbol_name> :: disassemble <symbol_name>\n");
 			printf("$sd quit or q :: quit debugger\n");
 			printf("$sd b <direct address> :: create breakpoint in address\n");
 			printf("$sd r :: running program\n"); 
@@ -258,10 +258,11 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 			printf("$sd n :: step over\n");
 			printf("$sd s :: step into\n");
 			printf("$sd info b :: print breakpoint\n");
+			printf("$sd info r :; print register\n"); 
 			printf("$sd del <breakpoint index> :: delete breakpoint <index>\n");
 			printf("$sd dump <address> <size> :: dump memory from addr as size\n"); 
 			printf("$sd set <regsiter> <value> :: set register with value\n"); 
-			printf("will adding...aa\n\n");
+			printf("will adding...ahhhhhh!\n\n");
 		}
 		else if(!strncmp(data, "b", 1)) //b *symbol_name+line_number, b *0x~~ direct breakpoint
 		{//지금은 direct 주소만 받게 하자. 
@@ -303,14 +304,12 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 		else if(!strncmp(data, "dump", 4))
 		{
 			unsigned from_addr; 
-			int size; 
-			ptr = NULL; 
+			unsigned size; 
 			tok = strtok(data, " ");
 			tok = strtok(NULL, " "); 
-			from_addr = strtol(tok, &ptr, 16);
-			ptr = NULL; 
+			from_addr = strtoul(tok, NULL, 16); 
 			tok = strtok(NULL, " "); 
-			size = strtol(tok, &ptr, 16); //변환 오류 ///////////////////////////////////////////////////
+			size = strtol(tok, NULL, 16); 
 			//printf("================================================test : %x",size);
 			dump_process_memory(pid, from_addr, size);
 		}
@@ -318,19 +317,24 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 		{
 			print_breakpoint(pid, head_bp); 
 		}
-		else if(!strncmp(data, "set", 3)) //error 
+		else if(!strncmp(data, "set", 3)) 
 		{
-			int value;
-			char* tmp; 
-			ptr = NULL; 
+			unsigned value;
+			char* tmp;  
 			tok = strtok(data, " ");
+			tok = strtok(NULL, " ");
 			tmp = tok; 
 			tok = strtok(NULL, " ");
-			value = strtol(tok, &ptr, 16); 
+			value = strtoul(tok, NULL, 16); 
+			//printf(" test : %x\n",value);
 			set_register(pid, tmp, value);
 		}
 		else if(!strncmp(data, "inject ~", 6)) //change memory 
 		{
+		}
+		else if(!strcmp(data, "info r"))
+		{
+			info_register(pid); 
 		}
 		else if(!strcmp(data, "test"))
 		{
@@ -339,6 +343,13 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 		else
 			continue; 
 	}
+}
+
+void info_register(pid_t pid)
+{
+	struct user_regs_struct regs; 
+	ptrace(PTRACE_GETREGS, pid, 0, &regs); 
+	printf("eax : %lx | ebx : %lx | ecx : %lx | edx : %lx | esi : %lx | edi : %lx | ebp : %lx | esp : %lx | eip : %lx\n",regs.eax, regs.ebx, regs.ecx, regs.edx, regs.esi, regs.edi, regs.ebp, regs.esp, regs.eip); 
 }
 
 void check_symtab(int* check_symtab_offset, int e_shnum, Elf32_Shdr* section)
@@ -776,6 +787,7 @@ void disp_func(unsigned char* file, int* index, int disp, char* disp_field)
 	char* hex;
 	char complement_disp; //음수체크 
 	int complement_disp32; //disp32의 음수체크 
+	unsigned complement_disp32_test;
 	short complement_disp16; //disp16 check 
 	unsigned char disp32[4];
 	unsigned char disp16[2]; 
@@ -786,13 +798,14 @@ void disp_func(unsigned char* file, int* index, int disp, char* disp_field)
 	else if(disp == 1){  //1 byte //disp위치에서 1바이트 읽기 
 		disp = file[++(*index)];
 		complement_disp = disp;
-		if(complement_disp < 0)
+		if(complement_disp < 0) //0x100 - x 해야겠다. 
 		{
-			sprintf(temp, "%d]", complement_disp);
+			complement_disp = 0x100 - complement_disp; ///////////////////////////////////////////////////
+			sprintf(temp, "-0x%x]", complement_disp);
 			strcat(disp_field, temp); 
 		}
 	   	else{
-			sprintf(temp, "+%d]",complement_disp); 
+			sprintf(temp, "+0x%x]",complement_disp); 
 			strcat(disp_field, temp);	
 		}
 	}
@@ -804,18 +817,25 @@ void disp_func(unsigned char* file, int* index, int disp, char* disp_field)
 		//	printf("test dis32 : %x\n", disp32[i]);
 		}
 		sprintf(temp, "%02x%02x%02x%02x", disp32[3], disp32[2], disp32[1], disp32[0]); 
-		complement_disp32 = strtol(temp, NULL, 16); 
+		//printf("test : %s \n",temp);
+		//complement_disp32 = strtol(temp, NULL, 16); //overflow? 
+		complement_disp32_test = strtoul(temp, NULL, 16);
 		//printf("test2 : %d\n", complement_disp32);
 		//printf("test2 : %s\n", temp);
 		memset(temp, '\0', 50);
-		if(complement_disp32 < 0)
+		//printf("test : %x\n",complement_disp32_test);
+		if(complement_disp32_test > 0x7fffffff) //음수 
 		{
-			sprintf(temp, "%d]", complement_disp32);
+			complement_disp32_test = 0x100000000 - complement_disp32_test; 
+			//printf("test1 : %x\n",complement_disp32_test);
+			//complement_disp32 = 0x100000000 - complement_disp32;  /////////////////////////////////
+			sprintf(temp, "-0x%x]", complement_disp32_test);
 			strcat(disp_field, temp); 
 			//printf("test4 : %s\n", disp_field); 
 		}
 		else{
-			sprintf(temp, "+%d]", complement_disp32); 
+			//printf("test1 : %x\n",complement_disp32_test);
+			sprintf(temp, "+0x%x]", complement_disp32_test); 
 			strcat(disp_field, temp);
 			//printf("test3  : %s\n", disp_field);
 		}
@@ -836,7 +856,7 @@ void disp_func(unsigned char* file, int* index, int disp, char* disp_field)
 		sprintf(temp, "%02x%02x", disp16[1], disp16[0]); 
 		complement_disp16 = strtol(temp, NULL, 16); 
 		memset(temp, '\0', 50); 
-		sprintf(temp, "%d", complement_disp16);
+		sprintf(temp, "0x%x", complement_disp16); ////////////////////////////////////////////
 		strcat(disp_field, temp); 
 	}
 }
@@ -1237,7 +1257,7 @@ char* r16r32_rm16r32(unsigned char* file, int* index)
 	int reg, mod, rm, order;
 	char* final; 
 
-	order = 1;//rm_r     order = 1 //r_rm
+	order = 1;//     order = 1 //r_rm
 	dword_ptr = 1;
 	final = modrm_byte(file, index, modrm, &mod, &rm, &reg, sbit, order); 
 	return final; 
@@ -2005,6 +2025,7 @@ void show_information(pid_t pid, ins_list* head_ins)
 	struct user_regs_struct regs; 
 	system("clear");
 	ptrace(PTRACE_GETREGS, pid, 0, &regs); 
+	printf("%c[1;37m",27);
 	printf("[--------------------register--------------------]\n"); 
 	printf("EAX: 0x%lX\n", regs.eax); //만약 레지스터에 주소값처럼 되어있으면 거기 dump뜬것도 보여주자. 
  	printf("EBX: 0x%lX\n", regs.ebx);
@@ -2015,6 +2036,7 @@ void show_information(pid_t pid, ins_list* head_ins)
 	printf("EBP: 0x%lX\n", regs.ebp); 
 	printf("ESP: 0x%lX\n", regs.esp); 
 	printf("EIP: 0x%lX\n", regs.eip); 
+	printf("%c[0m",27);
 	//printf("EFLAGS:\n"); //
 	printf("[----------------------code----------------------]\n");	
 	
@@ -2042,8 +2064,11 @@ void show_information(pid_t pid, ins_list* head_ins)
 			printf(" => %x <+%4d> %s",curr->addr, curr->line_number ,curr->ins);
 			printf("%c[0m",27); 
 		}
-		else
+		else{
+			printf("%c[1;37m",27);
 			printf("    %x <+%4d> %s",curr->addr, curr->line_number, curr->ins);
+			printf("%c[0m",27);
+		}
 		curr = curr->next; 
 		if(curr == NULL)
 			break;
@@ -2052,7 +2077,9 @@ void show_information(pid_t pid, ins_list* head_ins)
 	for(i=0, j=0;i<=28;i+=4, j++)
 	{
 		data = ptrace(PTRACE_PEEKDATA, pid, regs.esp+j*4, 0);
+		printf("%c[1;37m",27);
 		printf("%04d| %p --> 0x%X\n",i,(void*)(regs.esp+j*4),data); 
+		printf("%c[0m",27);
 	}
 	printf("[------------------------------------------------]\n");
 
