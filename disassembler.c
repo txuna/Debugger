@@ -106,8 +106,6 @@ int setup(char* binary, char* file_name, int argu_number)
 	Elf32_Ehdr elf; 
 	Elf32_Shdr* section_header; 
 	Elf32_Phdr* program_header; 
-	struct Symbol_Meta* symbol_meta; 
-	int check_symtab_offset=0, strtab_offset, symtab_offset, i;
    	int symbol_number, program_virtual_memory_address; 	
 	if(argu_number != 2)
 	{
@@ -115,6 +113,8 @@ int setup(char* binary, char* file_name, int argu_number)
 		exit(1);
 	}
 
+	int i;	
+	struct Symbol_Meta* symbol_meta;
 	int file_vol; 
 	unsigned char* file; 
 	int text_offset=0; 
@@ -132,14 +132,18 @@ int setup(char* binary, char* file_name, int argu_number)
 	program_virtual_memory_address = elf_program_header_load(elf, fd);
 	virtual_addr = program_virtual_memory_address; 
 
+	int check_symtab_offset;
 	section_header = elf_section_header(elf, fd, &text_offset, &text_size);  //야기서 .text섹션 꺼내와야함. 
 	check_symtab(&check_symtab_offset, elf.e_shnum, section_header); //symtab의 위치를 확인 
 	
 	//text_offset = text_offset - program_virtual_memory_address; 
-	
-	strtab_offset = ((section_header+elf.e_shstrndx-1)->sh_offset); 
-	symtab_offset = (section_header+check_symtab_offset)->sh_offset;
-	symbol_number = (strtab_offset - symtab_offset) / 0x10; //struct의 크기만큼 나누어 개수를 확인 
+		
+	//strtab_offset = symtab_offset + (section_header+check_symtab_offset)->sh_size; 
+	//strtab_offset = ((section_header+elf.e_shstrndx-1)->sh_offset); 
+	int symtab_offset = (section_header+check_symtab_offset)->sh_offset;
+	int strtab_offset = symtab_offset + (section_header+check_symtab_offset)->sh_size;
+	symbol_number = (section_header+check_symtab_offset)->sh_size / 0x10;
+	//symbol_number = (strtab_offset - symtab_offset) / 0x10; //struct의 크기만큼 나누어 개수를 확인 
 	symbol_meta = symbol_table(strtab_offset, symtab_offset, fd, program_virtual_memory_address); 
 	
 	close(fd); 
@@ -234,12 +238,36 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 			printf("===============================================\n");
 
 		}
+		else if(!strncmp(data, "addr disasm",11))
+		{
+			int count =0; 
+			print_check = 0; 
+			tok = strtok(data, " ");
+			tok = strtok(NULL, " ");
+		   	tok = strtok(NULL, " ");	
+			unsigned address = strtoul(tok, NULL, 16) - virtual_addr; 
+			tok = NULL; 
+			for(count=0;count<symbol_number;count++)
+			{
+				if(address == symbol_meta[count].offset)
+				{
+					tok = symbol_meta[count].sym_name; 
+					break; 
+				}
+			}
+			if(tok == NULL)
+			{
+				printf("not disasm this %d address\n",address); 
+				return 0;
+			}
+			disasm(file, file_vol, symbol_meta, tok, symbol_number,0, 0); 
+
+		}
 		else if(!strncmp(data, "disasm", 6))
 		{
 			print_check = 0;  //disasm mode 
 			tok = strtok(data, " ");
 			tok = strtok(NULL, " ");
-		   	print_check =0;	
 			disasm(file, file_vol, symbol_meta, tok, symbol_number,0 ,0); //number :: symbol 개수 
 		}
 		else if(!strcmp(data, "quit") || !strcmp(data, "q"))
@@ -251,6 +279,7 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 			printf("\n");
 			printf("$sd print symbol :: print <%s>'s <symbol_name>\n", file_name); 
 			printf("$sd disasm <symbol_name> :: disassemble <symbol_name>\n");
+			printf("$sd addr disasm <direct address> :: disassemble address\n");
 			printf("$sd quit or q :: quit debugger\n");
 			printf("$sd b <direct address> :: create breakpoint in address\n");
 			printf("$sd r :: running program\n"); 
@@ -351,7 +380,7 @@ void info_register(pid_t pid)
 	ptrace(PTRACE_GETREGS, pid, 0, &regs); 
 	printf("eax : %lx | ebx : %lx | ecx : %lx | edx : %lx | esi : %lx | edi : %lx | ebp : %lx | esp : %lx | eip : %lx\n",regs.eax, regs.ebx, regs.ecx, regs.edx, regs.esi, regs.edi, regs.ebp, regs.esp, regs.eip); 
 }
-
+//strtab의 위치는 symtab의 offset을 더한 값
 void check_symtab(int* check_symtab_offset, int e_shnum, Elf32_Shdr* section)
 {
 	int i; 
@@ -877,7 +906,7 @@ char* rel16_32(unsigned char* file, int* index)
 		disp32[i] = file[++(*index)]; 
 	}
 	sprintf(temp, "%02x%02x%02x%02x", disp32[3], disp32[2], disp32[1], disp32[0]); 
-	jump_distance = strtol(temp, NULL, 16); 
+	jump_distance = strtoul(temp, NULL, 16); 
 	rel32 = rel32 + 5 + jump_distance + virtual_addr; 
 	//sprintf(final,"%x",rel32); 
  	for(i=0;i<copy_symbol_meta.size;i++)
@@ -2020,6 +2049,7 @@ int check_elf(int file)
 
 void show_information(pid_t pid, ins_list* head_ins)
 {
+	int count=0;
 	int i=0, j=0, eip_pos=1;
    	unsigned data=0;
 	struct user_regs_struct regs; 

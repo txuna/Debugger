@@ -262,7 +262,8 @@ int cont_instruction(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* hea
 	breakpoint* bp = head_bp->next; 
 	if(*run_bit != 1)
 	{
-		perror("the program is not being run."); 
+		printf("\ncotinue command is not execute\n");  
+		printf("msg : the program is not being run.\n"); 
 		return -1; 
 	}
 
@@ -307,7 +308,7 @@ int cont_instruction(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* hea
 		if(WIFEXITED(wait_status))
 		{
 			*run_bit = 0;
-			printf("the program is exied.\n"); 
+			printf("\nmsg : the program is exied.\n"); 
 			return 0;
 		}
 	}	
@@ -337,7 +338,8 @@ int step_into(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* head_ins)
 	int wait_status;
 	if(*run_bit != 1)
 	{
-		perror("the program is not being run.");
+		printf("\nstep into command is not execute\n");
+		printf("msg : the program is not being run.\n");
 		return -1;
 	}
 	ptrace(PTRACE_GETREGS, pid, 0, &regs); 
@@ -368,7 +370,8 @@ int step_into(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* head_ins)
 	show_information(pid, head_ins); 
 	if(WIFEXITED(wait_status))
 	{
-		perror("the program is exited.");
+		printf("\nstep into command is not execute\n");
+		printf("msg : the program is exited.\n");
 		*run_bit = 0;
 		return -1; 
 	}

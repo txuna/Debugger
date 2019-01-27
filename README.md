@@ -20,3 +20,5 @@ Email : b7712983@naver.com
 2019/1/21 :: I add breakpoint list 
 
 2019/1/26 :: I finished my debugger, GG but, have many bug XD, i will fix!
+
+2019/1/27 :: i fix some bug.. ex)strtab offset and position, size, symbol_number and I add direct address disasm! 
