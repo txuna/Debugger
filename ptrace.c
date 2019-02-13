@@ -1,4 +1,4 @@
-
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +10,7 @@
 #include <assert.h>
 #include <sys/user.h>
 
+#include "dumpcode.h"
 #include "debug.h"
 
 /*define value*/
@@ -387,15 +388,24 @@ void inject_process_memory(pid_t pid, unsigned from_addr, unsigned data)
 
 void dump_process_memory(pid_t pid, unsigned from_addr, unsigned size)
 {
+	if(size <= 0 || size >= 10000)
+	{
+		printf("size is too small and too big!\n");
+		exit(1); 
+	}
+	unsigned char buff[size]; 
 	int i=0;
+	unsigned addr;
 	printf("\nDump memory from [0x%08X ~ 0x%08X]\n", from_addr, from_addr+size); 
 	printf("------------------------------------\n");
-	for (unsigned addr = from_addr; addr <= from_addr+size; ++addr)
+	for (addr = from_addr; addr <= from_addr+size; ++addr)
 	{
-		unsigned word = ptrace(PTRACE_PEEKTEXT, pid, addr, 0); 
-		printf("[%d]: 0x%08X: %02x\n",i, addr, word & 0xFF); 
+		unsigned char word = ptrace(PTRACE_PEEKTEXT, pid, addr, 0); 
+		buff[i] = word; 
+		//printf("[%d]: 0x%08X: %02x\n",i, addr, word & 0xFF); 
 		i++;
 	}
+	dumpcode(buff, size, from_addr);
 	printf("------------------------------------\n");
 }
 

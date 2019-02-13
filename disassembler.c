@@ -13,10 +13,9 @@
 #include <sys/reg.h>
 #include <sys/wait.h>
 
-//#include <sys/elf.h>
 #include "debug.h"
 //#include "dumpcode.h"
-
+#include "ListBaseStack.h"
 /*============Variable===========*/
 extern int errno; 
 char* regs8[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
@@ -26,47 +25,7 @@ char* segreg[6] = {"cs", "ss", "ds", "es", "fs", "gs"};
 char* sib_base[8] = {"eax", "ecx", "edx", "ebx", "esp", "", "edi"};
 char* scale_index[8] = {"eax", "ecx", "edx", "ebx", "", "ebp", "esi", "edi"};
 char* mov_segment[6] = {"es", "cs", "ss", "ds", "fs", "gs"}; //mov같은 경우 위 segment_override와 순서가 다름. 
-//typedef enum segment_registe {cs=0x2e, ss=0x36, ds=0x3e, es=0x26, fs=0x64, gs=0x65}Segment; 
 
-//Segment seg_reg; 
-/*
-struct Symbol_Meta{ //각 각의 심볼들의 이름과 address 
-	char sym_name[100]; 
-	int offset; 
-	int size; 
-};
-
-struct Copy_Symbol_Meta{
-	char** sym_name; 
-	int* offset;
-    int size; 	
-};
-*/
-//instruction list
-/*
-typedef struct Instruction_List{
-	char ins[50]; 
-	unsigned addr; 
-	int line_number;
-	struct Instruction_List* next; 
-}ins_list; 
-
-ins_list* head_ins; //기준 노드 
-
-typedef struct BreakPoint{
-	void* addr; 
-	long orig_code; 
-	struct BreakPoint* next; 
-}breakpoint; 
-*/
-/////////////////////////////////////
-/*
-struct Instruction{
-	char** ins; 
-	int* address;
-    int* line_number; 	
-}; //이 구조체의 경우 다른 구조체와 달리 free하는 시점을 command가 끝난 시점으로 맞춘다. 
-*/
 //struct Instruction instruction; 
 struct Copy_Symbol_Meta copy_symbol_meta; 
 ins_list* head_ins;
@@ -132,36 +91,38 @@ int setup(char* binary, char* file_name, int argu_number)
 	program_virtual_memory_address = elf_program_header_load(elf, fd);
 	virtual_addr = program_virtual_memory_address; 
 
-	int check_symtab_offset;
+	int check_symtab_offset=0;
 	section_header = elf_section_header(elf, fd, &text_offset, &text_size);  //야기서 .text섹션 꺼내와야함. 
 	check_symtab(&check_symtab_offset, elf.e_shnum, section_header); //symtab의 위치를 확인 
 	
-	//text_offset = text_offset - program_virtual_memory_address; 
-		
-	//strtab_offset = symtab_offset + (section_header+check_symtab_offset)->sh_size; 
-	//strtab_offset = ((section_header+elf.e_shstrndx-1)->sh_offset); 
-	int symtab_offset = (section_header+check_symtab_offset)->sh_offset;
-	int strtab_offset = symtab_offset + (section_header+check_symtab_offset)->sh_size;
-	symbol_number = (section_header+check_symtab_offset)->sh_size / 0x10;
-	//symbol_number = (strtab_offset - symtab_offset) / 0x10; //struct의 크기만큼 나누어 개수를 확인 
-	symbol_meta = symbol_table(strtab_offset, symtab_offset, fd, program_virtual_memory_address); 
+	/*symbol table이 없는 경우이다. 이 경우 make_symbol.c파일에 인자로 넘겨서 sub_8004832이런식으로 분석 
+	  함수의 에필로그와 프롤로그를 분석하자. (인자 : head_ins)*/
+	if(check_symtab_offset > 0) 
+	{
+		int symtab_offset = (section_header+check_symtab_offset)->sh_offset;
+		int strtab_offset = symtab_offset + (section_header+check_symtab_offset)->sh_size;
+		symbol_number = (section_header+check_symtab_offset)->sh_size / 0x10;
+		symbol_meta = symbol_table(strtab_offset, symtab_offset, fd, program_virtual_memory_address); 
 	
-	close(fd); 
-	//아래코드는 symbol_meta구조체의 내용을 복사한다. 
-	copy_symbol_meta.sym_name = (char**)malloc(sizeof(char*)*symbol_number); 
-    for(i=0;i<symbol_number;i++)
-	{
-		copy_symbol_meta.sym_name[i] = (char*)malloc(sizeof(char)*100);
+		close(fd); 
+		//아래코드는 symbol_meta구조체의 내용을 복사한다. 
+		copy_symbol_meta.sym_name = (char**)malloc(sizeof(char*)*symbol_number); 
+	   	for(i=0;i<symbol_number;i++)
+		{
+			copy_symbol_meta.sym_name[i] = (char*)malloc(sizeof(char)*100);
+	 	}
+		copy_symbol_meta.offset	= (int*)malloc(sizeof(int)*symbol_number);
+	
+		for(i=0;i<symbol_number;i++)
+		{
+			strcpy(copy_symbol_meta.sym_name[i], symbol_meta[i].sym_name);
+			copy_symbol_meta.offset[i] = symbol_meta[i].offset;// - 0x08048000; 
+			//printf("%X\n", copy_symbol_meta.offset[i]);
+		}
+		copy_symbol_meta.size = symbol_number; 
 	}
-	copy_symbol_meta.offset	= (int*)malloc(sizeof(int)*symbol_number);
-
-	for(i=0;i<symbol_number;i++)
-	{
-		strcpy(copy_symbol_meta.sym_name[i], symbol_meta[i].sym_name);
-		copy_symbol_meta.offset[i] = symbol_meta[i].offset;// - 0x08048000; 
-		//printf("%X\n", copy_symbol_meta.offset[i]);
-	}
-	copy_symbol_meta.size = symbol_number; 
+	else
+		close(fd); 
 	
 	child_pid = fork(); 
 	
@@ -181,11 +142,14 @@ int setup(char* binary, char* file_name, int argu_number)
 		ptrace(PTRACE_DETACH, child_pid, 0, 0);
 		free(symbol_meta); 
 		free(copy_symbol_meta.offset); 
-		for(i=0;i<symbol_number;i++)
+		if(check_symtab_offset > 0)
 		{
-			free(copy_symbol_meta.sym_name[i]); 
+			for(i=0;i<symbol_number;i++)
+			{
+				free(copy_symbol_meta.sym_name[i]); 
+			}
+			free(copy_symbol_meta.sym_name);
 		}
-		free(copy_symbol_meta.sym_name);
 	}
 	else{
 		perror("fork()");
@@ -205,13 +169,20 @@ int child_ptrace(const char* program_name) //pipe연결해서 신호주면 다�
 }
 
 char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, int symbol_number, breakpoint* head_bp, int text_offset, int text_size)
-{
+{ 
+	/*명령어 스택을 추가해서 방향키를 누를때마다 볼 수 있게하자 command : history*/
+	Stack stack; 
+	StackInit(&stack); 
+	
 	unsigned addr; 
 	int run_bit=0; 
 	head_ins = (ins_list*)malloc(sizeof(ins_list));  //명령어 출력 리스트 
 	head_ins->next = NULL;  //기준 노드 
-	print_check = 1;
+	
+	print_check = 1; //dynamic debugging mode global variable
+	
 	disasm(file, file_vol, symbol_meta, ".text", symbol_number, text_offset, text_size); 
+	
 	int i; 
 	char data[100] = {0, }; 
 	char *tok, *ptr; 
@@ -224,7 +195,9 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 		printf("$sd ");
 		printf("%c[0m",27);
 		fgets(data, sizeof(data), stdin); 
+		//SPush(&stack, data); 
 		data[strlen(data)-1] = '\0';
+		SPush(&stack, data);
 		//read(0, data, sizeof(data)); 
 		//printf("%s\n",data);
 		if(!strcmp(data, "print symbol"))
@@ -291,7 +264,13 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 			printf("$sd del <breakpoint index> :: delete breakpoint <index>\n");
 			printf("$sd dump <address> <size> :: dump memory from addr as size\n"); 
 			printf("$sd set <regsiter> <value> :: set register with value\n"); 
+			printf("$sd history :: show input command\n"); 
 			printf("will adding...ahhhhhh!\n\n");
+		}
+		else if(!strcmp(data, "history"))
+		{
+			printf("adsad\n");
+			data_search(&stack);
 		}
 		else if(!strncmp(data, "b", 1)) //b *symbol_name+line_number, b *0x~~ direct breakpoint
 		{//지금은 direct 주소만 받게 하자. 
@@ -388,14 +367,18 @@ void check_symtab(int* check_symtab_offset, int e_shnum, Elf32_Shdr* section)
 	{
 		if((section+i)->sh_type == 0x2)
 		{
+			//printf("test");
 			*check_symtab_offset = i; 
 			break; 
 		}
+		//printf("test\n");
 	}
-	if(!(check_symtab_offset))
+	//printf("test : %d\n",*check_symtab_offset);
+	if(!(*check_symtab_offset))
 	{
 		perror("Umm... This is strpped file!"); //이땐 .text부터 분석 시작해보자. 함수의 에필로그와 프롤로그 비교
-		exit(1); 
+		//sleep(1000);
+		//exit(1); 
 	}
 }
 //중요구문 call, cmp, test, jmp관련 명령일 때 초록색으로 표시 temp_opcode라고 변수를 선언한 뒤 받자. 
@@ -1367,6 +1350,10 @@ int disasm(unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, c
 				print_some_address(file, &index);
 				check_prefix_line++;
 				++index;
+				if(file[index] >= 0x80 && file[index] <= 0x8f)
+				{
+					
+				}
 				switch(file[index])
 				{
 					case 0x80: parse("jo %s\n", rel16_32, file, &index); break;

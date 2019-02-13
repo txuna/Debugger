@@ -22,6 +22,7 @@ typedef struct Instruction_List{
 	unsigned addr; 
 	int line_number; 
 	struct Instruction_List* next;
+	/*unsigned char jump_code;*/
 }ins_list; 
 
 typedef struct BreakPoint{
@@ -47,6 +48,7 @@ typedef void* target_addr_t;
 
 /*============Fuction================================================================*/
 //void command_line(); 
+int print_function(); 
 int setup(char* binary, char* file_name, int argu_number); 
 char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol, struct Symbol_Meta* symbol_meta, int symbol_number, breakpoint* head_bp, int text_offset, int text_size);
 int print_some_address(unsigned char* file, int* index);
