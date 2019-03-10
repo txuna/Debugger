@@ -30,9 +30,9 @@ int enable_breakpoint(breakpoint* bp);
 //breakpoint* set_breakpoint(pid_t pid, target_addr_t addr);
 int delete_breakpoint(breakpoint* head_bp, int index);
 int disable_breakpoint(breakpoint* head_bp, int index); 
-void print_breakpoint(breakpoint* head_bp); 
+void print_breakpoint(breakpoint* head_bp);
 
-int main(int argc, char** argv)
+int main(void)
 {
 	breakpoint* head_bp = (breakpoint*)malloc(sizeof(breakpoint));  	
 	head_bp->next = NULL;  //head_bp가 기준 노드임 //여기엔 값을 넣지 않음. 
@@ -88,6 +88,8 @@ int delete_breakpoint(breakpoint* head_bp, int index)
 	breakpoint* curr = (breakpoint*)head_bp->next; 
 	breakpoint* before = head_bp;
 	int i; 
+	
+	//printf("hell");
 	if(curr == NULL)
 	{
 		perror("breakpoint (null pointer errro)"); 
@@ -95,7 +97,7 @@ int delete_breakpoint(breakpoint* head_bp, int index)
 	}
 	//before = curr; 
 
-	for(i=0;i,i<index;i++) 
+	for(i=0;i<index;i++) 
 	{	
 		before = curr; 
 		curr = (breakpoint*)curr->next; 
@@ -109,12 +111,6 @@ int delete_breakpoint(breakpoint* head_bp, int index)
 	//printf("test : %p\n",before->next);
     free(curr);
 	return 0; 	
-}
-
-int enable_breakpoint(breakpoint* bp)
-{
-	//assert(bp->addr); //NULL POINTER CHECK
-	//ptrace(PTRACE_POKETEXT, pid, bp->addr, (orig & TRAP_MASK) | TRAP_INST); 
 }
 
 breakpoint* create_breakpoint(breakpoint* head_bp, target_addr_t addr)  //기준 노드(head_bp)를 중심. 
