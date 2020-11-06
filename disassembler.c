@@ -263,6 +263,7 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 			printf("$sd info r :; print register\n"); 
 			printf("$sd del <breakpoint index> :: delete breakpoint <index>\n");
 			printf("$sd dump <address> <size> :: dump memory from addr as size\n"); 
+			printf("$sd inject <address> <size> :: inject value in memory as size\n");
 			printf("$sd set <regsiter> <value> :: set register with value\n"); 
 			printf("$sd history :: show input command\n"); 
 			printf("will adding...ahhhhhh!\n\n");
@@ -337,8 +338,19 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 			//printf(" test : %x\n",value);
 			set_register(pid, tmp, value);
 		}
-		else if(!strncmp(data, "inject ~", 6)) //change memory 
+		else if(!strncmp(data, "inject", 6)) //change memory 
 		{
+			unsigned from_addr; 
+			unsigned size; 
+			unsigned value; 
+			tok = strtok(data, " "); 
+			tok = strtok(NULL, " "); 
+			from_addr = strtoul(tok, NULL, 16); 
+			tok = strtok(NULL, " "); 
+			value = strtoul(tok, NULL, 16);
+			tok = strtok(NULL, " ");
+			size = strtoul(tok, NULL, 16); 
+			inject_process_memory(pid, from_addr, value, size); 	
 		}
 		else if(!strcmp(data, "info r"))
 		{

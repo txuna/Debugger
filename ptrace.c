@@ -16,6 +16,11 @@
 /*define value*/
 #define TRAP_MASK 0xFFFFFF00
 #define TRAP_INST 0xCC
+
+#define fourSwap(X) ((X>>24)&0xff) | ((X<<8)&0xff0000) | ((X>>8)&0xff00) | ((X<<24)&0xff000000) 
+
+#define twoSwap(X) (X>>8) | (X<<8)
+
 //typedef void* target_addr_t; 
 /*
 typedef struct BreakPoint{
@@ -380,9 +385,23 @@ int step_into(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* head_ins)
 	
 }
 
-void inject_process_memory(pid_t pid, unsigned from_addr, unsigned data)
+void inject_process_memory(pid_t pid, unsigned from_addr, unsigned data, unsigned data_size)
 {
-	ptrace(PTRACE_POKEDATA, pid, from_addr, data);
+	unsigned swap_bit; 
+	switch(data_size){
+		case 1:
+			ptrace(PTRACE_POKEDATA, pid, from_addr, (char)data);
+			break; 
+		case 2:
+			break; 
+		case 4:
+			//swap_bit = fourSwap(data); 
+			ptrace(PTRACE_POKEDATA, pid, from_addr, data); 
+			break; 
+		default:
+			break; 
+	}
+	//ptrace(PTRACE_POKEDATA, pid, from_addr, data);
 	 
 }
 

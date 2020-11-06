@@ -123,7 +123,7 @@ int step_over(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* head_ins);
 int step_into(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* head_ins); 
 //void show_infomation(pid_t pid, breakpoint* head_bp); 
 void dump_process_memory(pid_t pid, unsigned from_addr, unsigned size);
-void inject_process_memory(pid_t pid, unsigned from_addr, unsigned data);
+void inject_process_memory(pid_t pid, unsigned from_addr, unsigned data, unsigned data_size);
 void set_register(pid_t pid, char* regis, unsigned data);
 //void register_info(pid_t pid); 
 
