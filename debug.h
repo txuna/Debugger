@@ -32,6 +32,12 @@ typedef struct BreakPoint{
 	struct BreakPoint* next;
 }breakpoint; 
 
+typedef struct Declares{
+	char name[20]; 
+	unsigned addr;
+	struct Declares* next; 
+}declare;
+
 struct Symbol_Meta{ //각 각의 심볼들의 이름과 address 
 	char sym_name[100]; 
 	int offset; 
@@ -45,6 +51,10 @@ struct Copy_Symbol_Meta{
 };
 
 typedef void* target_addr_t;
+
+/*===================================================================================*/
+void input_declare(char* name, unsigned addr); 
+//void delete_declare(); 
 
 /*============Fuction================================================================*/
 //void command_line(); 

@@ -28,7 +28,8 @@ char* mov_segment[6] = {"es", "cs", "ss", "ds", "fs", "gs"}; //mov같은 경우 
 
 //struct Instruction instruction; 
 struct Copy_Symbol_Meta copy_symbol_meta; 
-ins_list* head_ins;
+ins_list* head_ins = NULL;
+declare* head_def = NULL; 
 //int sym_size; //symbol의 개수 
 //int line_start = 0;
 unsigned virtual_addr = 0; 
@@ -55,6 +56,30 @@ int main(int argc, char** argv)
 	setup(argv[0], argv[1], argc); 
 	return 0;
 }
+
+void input_declare(char* name, unsigned addr){
+	declare* curr = NULL;  
+	if(head_def == NULL){
+		head_def = (declare*)malloc(sizeof(declare)); 
+		strcpy(head_def->name, name);
+		strncpy(head_def->name, name, strlen(name)+1);
+		head_def->addr = addr; 
+	    head_def->next = NULL; 	
+	}else{
+	    curr = head_def; 
+		while(curr->next != NULL){
+			curr = curr->next;
+		}
+		curr->next = (declare*)malloc(sizeof(declare)); 
+		strncpy(curr->next->name, name, strlen(name)+1); 
+		curr->next->addr = addr; 
+	}
+}
+
+/*void delete_declare(){
+
+}
+*/
 
 int setup(char* binary, char* file_name, int argu_number)
 {
@@ -265,13 +290,64 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 			printf("$sd dump <address> <size> :: dump memory from addr as size\n"); 
 			printf("$sd inject <address> <size> :: inject value in memory as size\n");
 			printf("$sd set <regsiter> <value> :: set register with value\n"); 
+			printf("$sd show :: show info register, code, stack, stackframe\n");
+			printf("$sd declare <name> <address> :: show <name> in stackframe\n");
 			printf("$sd history :: show input command\n"); 
+			printf("$sd list_def :: show def list\n");
 			printf("will adding...ahhhhhh!\n\n");
+		}
+		else if(!strcmp(data, "list_def")){
+			declare* curr = head_def;
+			if(curr == NULL){
+				printf("NULL\n");
+			}	
+			while(curr != NULL){
+				printf("[%s %d]\n", curr->name, curr->addr);
+				curr = curr->next; 
+			}
+		}
+		else if(!strncmp(data, "declare", 7)){
+			ptr = NULL; 
+			tok = strtok(data, " "); 
+			tok = strtok(NULL, " "); //name 
+			ptr = tok; //name save
+			tok = strtok(NULL, " "); 
+			//registers 또는 다른 declare에 대해서도 체크해서 하기
+			unsigned show_addr = 0; 
+			char *op; 
+			int bit; 
+			if(tok[0] == '$'){
+				if(tok[4] == '+'){
+					op = "+";	
+					bit = 1; 
+				}else if(tok[4] == '-'){
+					op = "-";
+				    bit = -1; 	
+				}
+				tok = &tok[1]; 
+				char* left = strtok(tok, op);
+				char* right = strtok(NULL, op);
+				struct user_regs_struct regs; 
+			    printf("%s %s\n", left, right);
+				ptrace(PTRACE_GETREGS, pid, 0, &regs); 
+				if(!strncmp(left, "ebp", 3)){ 
+					show_addr = regs.ebp + (atoi(right) * bit); 
+				} else if(!strncmp(left, "esp", 3)){
+					show_addr = regs.esp + (atoi(right) * bit); 
+				}
+			}else{
+				show_addr = strtoul(tok, NULL, 16);
+				//input_declare(ptr, show_addr);
+			}
+			//unsigned show_addr = strtoul(tok, NULL, 16);
+			input_declare(ptr, show_addr);
 		}
 		else if(!strcmp(data, "history"))
 		{
-			printf("adsad\n");
 			data_search(&stack);
+		}
+		else if(!strcmp(data, "show")){
+			show_information(pid, head_ins);
 		}
 		else if(!strncmp(data, "b", 1)) //b *symbol_name+line_number, b *0x~~ direct breakpoint
 		{//지금은 direct 주소만 받게 하자. 
@@ -2110,6 +2186,44 @@ void show_information(pid_t pid, ins_list* head_ins)
 		printf("%04d| %p --> 0x%X\n",i,(void*)(regs.esp+j*4),data); 
 		printf("%c[0m",27);
 	}
-	printf("[------------------------------------------------]\n");
-
+	
+	printf("[-------------------Stack Frame------------------]\n");
+	unsigned gap = 0;
+  	unsigned long esp = regs.esp; 
+	unsigned long ebp = regs.ebp; 	
+	//printf("ESP EBP : 0x%X 0x%X=> %d\n",regs.esp, regs.ebp+4, (regs.esp <= regs.ebp+40));
+	printf("┏──────────────────────────────────┓\n");
+	for(i=esp, j=0; i<=(ebp+28); i+=4, j++)
+	{
+		data = ptrace(PTRACE_PEEKDATA, pid, regs.esp+j*4, 0); 
+		//gap = (regs.esp - regs.ebp)/4;  //ebp 기준으로 갭 체크하기 esp가 ㅇㅇ
+		if(regs.esp <= regs.ebp){
+			gap = regs.ebp - regs.esp - (j*4); 
+		}else{
+			gap = regs.esp - regs.ebp + (j*4); 
+		}
+		printf("%c[1;37m",27);
+		printf("┠──────────────────────────────────┨\n");
+		printf("│%08d│%08p --> 0x%08X│", gap, (void*)i , data);
+		if(i == regs.esp){
+			printf("<---ESP");
+		} 
+		if(i == regs.ebp){
+			printf("<---EBP");
+		}
+		if(i == regs.eip){
+			printf("<---EIP");
+		}
+		declare* curr = head_def; 
+		while(curr != NULL){
+			if(i == curr->addr){
+				printf("<---%s",curr->name);
+			}
+			curr = curr->next;
+		}
+		printf("\n"); 
+		printf("%c[1;37m", 27);
+	} 
+	printf("┖──────────────────────────────────┚\n");
 }
+
