@@ -385,6 +385,15 @@ int step_into(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* head_ins)
 	
 }
 
+void payload_inject(pid_t pid, unsigned addr, char* buffer, unsigned size){
+	unsigned *src = (unsigned*)buffer; 
+	//printf("size %d\n", size);
+	for(int i=0;i<size;i+=4, addr+=4,src++){
+		//printf("shell : %d\n", *src);
+		ptrace(PTRACE_POKEDATA, pid, addr, *src); 
+	}
+}
+
 void inject_process_memory(pid_t pid, unsigned from_addr, unsigned data, unsigned data_size)
 {
 	unsigned swap_bit; 

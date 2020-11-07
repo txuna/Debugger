@@ -288,13 +288,30 @@ char* command_line(pid_t pid, char* file_name, unsigned char* file, int file_vol
 			printf("$sd info r :; print register\n"); 
 			printf("$sd del <breakpoint index> :: delete breakpoint <index>\n");
 			printf("$sd dump <address> <size> :: dump memory from addr as size\n"); 
-			printf("$sd inject <address> <size> :: inject value in memory as size\n");
+			printf("$sd inject <address> <value> <size> :: inject value in memory as size\n");
+			printf("$sd payload <address> <payload file>\n");
 			printf("$sd set <regsiter> <value> :: set register with value\n"); 
 			printf("$sd show :: show info register, code, stack, stackframe\n");
 			printf("$sd declare <name> <address> :: show <name> in stackframe\n");
 			printf("$sd history :: show input command\n"); 
 			printf("$sd list_def :: show def list\n");
 			printf("will adding...ahhhhhh!\n\n");
+		}
+		else if(!strncmp(data, "payload", 7)){
+			tok = strtok(data, " "); 
+			tok = strtok(NULL, " "); 
+			unsigned addr = strtoul(tok, NULL, 16); 
+			tok = strtok(NULL, " "); 
+			FILE* fp = fopen((const char*)tok, "r"); 
+			fseek(fp, 0, SEEK_END); 
+			unsigned size = ftell(fp)-1;
+			fseek(fp, 0, SEEK_SET);
+			char* buffer = (char*)malloc(size); 
+			fread(buffer, size, 1, fp);
+		    //printf("shellcode : %s\n", buffer);	
+			fclose(fp);
+			payload_inject(pid, addr, buffer, size); 
+			free(buffer);
 		}
 		else if(!strcmp(data, "list_def")){
 			declare* curr = head_def;

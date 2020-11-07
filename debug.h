@@ -135,5 +135,6 @@ int step_into(pid_t pid, breakpoint* head_bp, int* run_bit, ins_list* head_ins);
 void dump_process_memory(pid_t pid, unsigned from_addr, unsigned size);
 void inject_process_memory(pid_t pid, unsigned from_addr, unsigned data, unsigned data_size);
 void set_register(pid_t pid, char* regis, unsigned data);
+void payload_inject(pid_t pid, unsigned addr, char* buffer, unsigned size);
 //void register_info(pid_t pid); 
 
