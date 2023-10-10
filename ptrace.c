@@ -21,69 +21,6 @@
 
 #define twoSwap(X) (X>>8) | (X<<8)
 
-//typedef void* target_addr_t; 
-/*
-typedef struct BreakPoint{
-	target_addr_t addr; 
-	long orig_code;
-    struct BreakPoint* next; //다음 bp 구조체의 주소를 담음. 	
-}breakpoint;
-*/
-//int break_index = 0; 
-
-
-/*기준 노드가 되는 head_bp는 사용되지 않고 단지 시작점을 잡기 위해 사용됨*/
-
-/*function*/
-//int child_ptrace(const char* program_name); 
-//int run_debugger(pid_t pid, const char* program_name); 
-/*
-int create_breakpoint(pid_t pid, breakpoint* head_bp, target_addr_t addr);  
-int enable_breakpoint(pid_t pid, breakpoint* bp); 
-int delete_breakpoint(pid_t pid, breakpoint* head_bp, int index);
-int disable_breakpoint(pid_t pid, breakpoint* head_bp, int index); 
-void print_breakpoint(pid_t pid, breakpoint* head_bp); 
-//void command_line(pid_t pid, breakpoint* head_bp); 
-int run_instruction(pid_t pid, breakpoint* head_bp, int* run_bit);
-int cont_instruction(pid_t pid, breakpoint* head_bp, int* run_bit);
-int step_over(pid_t pid, breakpoint* head_bp, int* run_bit); 
-int step_into(pid_t pid, breakpoint* head_bp, int* run_bit); 
-//void show_infomation(pid_t pid, breakpoint* head_bp); 
-void dump_process_memory(pid_t pid, unsigned from_addr, unsigned size);
-void inject_process_memory(pid_t pid, unsigned from_addr, unsigned data);
-void set_register(pid_t pid, char* regis, unsigned data);
-//void register_info(pid_t pid); 
-void debug_module(pid_t pid, char* command, ins_list* head_ins); //ptrace_traceme를 시전 
-
-
-void debug_module(pid_t pid, char* command, ins_list* head_ins)
-{
-
-}
-*/
-/*
-int main(int argc, char** argv)
-{
-	//printf("asd");
-	if(argc != 2)
-	{
-		perror("argc!");
-		exit(1);
-	}
-
-	pid_t child_pid = fork(); 
-	if(child_pid  == 0)
-		child_ptrace(argv[1]);
-	else if(child_pid > 0)
-		run_debugger(child_pid, argv[1]); 
-	else{
-		perror("fork()"); 
-		exit(1); 
-	}
-
-	return 0; 
-}
-*/
 void set_register(pid_t pid, char* regis, unsigned data)
 {
 	struct user_regs_struct regs; 
@@ -188,36 +125,7 @@ int delete_breakpoint(pid_t pid, breakpoint* head_bp, int index)
     free(curr); 	
 	return 0;
 }
-/*
-void show_infomation(pid_t pid, breakpoint* head_bp) 
-{	
-	int i, j;
-   	unsigned data;
-	struct user_regs_struct regs; 
-	system("clear");
-	ptrace(PTRACE_GETREGS, pid, 0, &regs); 
-	printf("[--------------------register--------------------]\n"); 
-	printf("EAX: 0x%lX\n", regs.eax); //만약 레지스터에 주소값처럼 되어있으면 거기 dump뜬것도 보여주자. 
- 	printf("EBX: 0x%lX\n", regs.ebx);
-	printf("ECX: 0x%lX\n", regs.ecx);
-	printf("EDX: 0x%lX\n", regs.edx); 
-	printf("ESI: 0x%lX\n", regs.esi);
-	printf("EDI: 0x%lX\n", regs.edi);
-	printf("EBP: 0x%lX\n", regs.ebp); 
-	printf("ESP: 0x%lX\n", regs.esp); 
-	printf("EIP: 0x%lX\n", regs.eip); 
-	//printf("EFLAGS:\n"); //
-	printf("[----------------------code----------------------]\n");	
-	//printf(""); //disassembler.c 에서 선언한 전역변수를 끌고오자. code를 보여줌. 
-	printf("[----------------------stack---------------------]\n");
-	for(i=0, j=0;i<=28;i+=4, j++)
-	{
-		data = ptrace(PTRACE_PEEKDATA, pid, regs.esp+j*4, 0);
-		printf("%04d| %p --> 0x%X\n",i,(void*)(regs.esp+j*4),data); 
-	}
-	printf("[------------------------------------------------]\n");
-}
-*/
+
 int enable_breakpoint(pid_t pid, breakpoint* bp)
 {
 	assert(bp->addr); //NULL POINTER CHECK

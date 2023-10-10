@@ -1,0 +1,11 @@
+*.o
+*.out
+a.out 
+.gdb_history
+*.gdb_history
+hello
+tags
+test.c
+test2.c
+shellcode
+debugger
